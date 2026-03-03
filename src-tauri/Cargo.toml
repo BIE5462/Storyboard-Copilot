@@ -28,3 +28,4 @@ tracing-appender = "0.2"
 thiserror = "2"
 directories = "6"
 async-trait = "0.1"
+rusqlite = { version = "0.32", features = ["bundled"] }

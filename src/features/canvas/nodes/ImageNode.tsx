@@ -68,7 +68,11 @@ export const ImageNode = memo(({ id, data, selected }: ImageNodeProps) => {
         }}
       >
         {data.imageUrl ? (
-          <img src={data.imageUrl} alt="Generated" className="h-full w-full object-contain" />
+          <img
+            src={data.previewImageUrl || data.imageUrl}
+            alt="Generated"
+            className="h-full w-full object-contain"
+          />
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-text-muted/85">
             <Sparkles className="h-7 w-7 opacity-60" />

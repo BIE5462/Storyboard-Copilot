@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::info;
 
-use crate::ai::{GenerateRequest, ProviderRegistry};
 use crate::ai::providers::PPIOProvider;
+use crate::ai::{GenerateRequest, ProviderRegistry};
 
 static REGISTRY: std::sync::OnceLock<ProviderRegistry> = std::sync::OnceLock::new();
 static PPIO_PROVIDER: std::sync::OnceLock<Arc<PPIOProvider>> = std::sync::OnceLock::new();
@@ -18,9 +18,9 @@ fn get_registry() -> &'static ProviderRegistry {
 }
 
 fn get_ppio_provider() -> Arc<PPIOProvider> {
-    PPIO_PROVIDER.get_or_init(|| {
-        Arc::new(PPIOProvider::new())
-    }).clone()
+    PPIO_PROVIDER
+        .get_or_init(|| Arc::new(PPIOProvider::new()))
+        .clone()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,7 +42,7 @@ pub async fn set_api_key(provider: String, api_key: String) -> Result<(), String
             ppio.set_api_key(api_key).await;
             Ok(())
         }
-        _ => Err(format!("Unknown provider: {}", provider))
+        _ => Err(format!("Unknown provider: {}", provider)),
     }
 }
 
@@ -69,7 +69,5 @@ pub async fn generate_image(request: GenerateRequestDto) -> Result<String, Strin
 
 #[tauri::command]
 pub async fn list_models() -> Result<Vec<String>, String> {
-    Ok(vec![
-        "ppio/gemini-3.1-flash".to_string(),
-    ])
+    Ok(vec!["ppio/gemini-3.1-flash".to_string()])
 }

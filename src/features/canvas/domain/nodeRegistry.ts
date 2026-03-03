@@ -7,6 +7,7 @@ import {
   type CanvasNodeType,
   type ImageEditNodeData,
   type StoryboardSplitNodeData,
+  type StoryboardGenNodeData,
   type UploadImageNodeData,
 } from './canvasNodes';
 import { DEFAULT_IMAGE_MODEL_ID } from '../models';
@@ -38,6 +39,7 @@ const uploadNodeDefinition: CanvasNodeDefinition<UploadImageNodeData> = {
   },
   createDefaultData: () => ({
     imageUrl: null,
+    previewImageUrl: null,
     aspectRatio: DEFAULT_ASPECT_RATIO,
   }),
 };
@@ -53,6 +55,7 @@ const imageEditNodeDefinition: CanvasNodeDefinition<ImageEditNodeData> = {
   },
   createDefaultData: () => ({
     imageUrl: null,
+    previewImageUrl: null,
     aspectRatio: DEFAULT_ASPECT_RATIO,
     requestAspectRatio: AUTO_REQUEST_ASPECT_RATIO,
     prompt: '',
@@ -81,10 +84,36 @@ const storyboardSplitDefinition: CanvasNodeDefinition<StoryboardSplitNodeData> =
   }),
 };
 
+const storyboardGenNodeDefinition: CanvasNodeDefinition<StoryboardGenNodeData> = {
+  type: CANVAS_NODE_TYPES.storyboardGen,
+  menuLabelKey: 'node.menu.storyboardGen',
+  menuIcon: 'sparkles',
+  visibleInMenu: true,
+  capabilities: {
+    toolbar: true,
+    promptInput: false,
+  },
+  createDefaultData: () => ({
+    gridRows: 2,
+    gridCols: 2,
+    frames: [],
+    model: DEFAULT_IMAGE_MODEL_ID,
+    size: '2K' as ImageSize,
+    requestAspectRatio: AUTO_REQUEST_ASPECT_RATIO,
+    imageUrl: null,
+    previewImageUrl: null,
+    aspectRatio: DEFAULT_ASPECT_RATIO,
+    isGenerating: false,
+    generationStartedAt: null,
+    generationDurationMs: 60000,
+  }),
+};
+
 export const canvasNodeDefinitions: Record<CanvasNodeType, CanvasNodeDefinition> = {
   [CANVAS_NODE_TYPES.upload]: uploadNodeDefinition,
   [CANVAS_NODE_TYPES.imageEdit]: imageEditNodeDefinition,
   [CANVAS_NODE_TYPES.storyboardSplit]: storyboardSplitDefinition,
+  [CANVAS_NODE_TYPES.storyboardGen]: storyboardGenNodeDefinition,
 };
 
 export function getNodeDefinition(type: CanvasNodeType): CanvasNodeDefinition {

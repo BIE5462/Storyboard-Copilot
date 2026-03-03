@@ -11,5 +11,9 @@ pub struct PreparedRequest {
 
 pub trait PPIOModelAdapter: Send + Sync {
     fn matches(&self, model: &str) -> bool;
-    fn build_request(&self, request: &GenerateRequest, base_url: &str) -> Result<PreparedRequest, AIError>;
+    fn build_request(
+        &self,
+        request: &GenerateRequest,
+        base_url: &str,
+    ) -> Result<PreparedRequest, AIError>;
 }

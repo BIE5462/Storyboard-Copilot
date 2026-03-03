@@ -4,7 +4,7 @@ import {
   useEffect,
   useMemo,
   useRef,
-  type MouseEvent,
+  type MouseEvent as ReactMouseEvent,
 } from 'react';
 import {
   ReactFlow,
@@ -14,7 +14,10 @@ import {
   useReactFlow,
   type Connection,
   type EdgeChange,
+  type FinalConnectionState,
+  type HandleType,
   type NodeChange,
+  type OnConnectStartParams,
   type Viewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -22,7 +25,12 @@ import '@xyflow/react/dist/style.css';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { canvasEventBus } from '@/features/canvas/application/canvasServices';
-import type { CanvasEdge, CanvasNode, CanvasNodeType } from '@/features/canvas/domain/canvasNodes';
+import {
+  CANVAS_NODE_TYPES,
+  type CanvasEdge,
+  type CanvasNode,
+  type CanvasNodeType,
+} from '@/features/canvas/domain/canvasNodes';
 import { nodeTypes } from './nodes';
 import { edgeTypes } from './edges';
 import { NodeSelectionMenu } from './NodeSelectionMenu';
@@ -30,14 +38,85 @@ import { SelectedNodeOverlay } from './ui/SelectedNodeOverlay';
 import { NodeToolDialog } from './ui/NodeToolDialog';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
+const NODE_TYPES_WITH_SOURCE_HANDLE: CanvasNodeType[] = [
+  CANVAS_NODE_TYPES.upload,
+  CANVAS_NODE_TYPES.imageEdit,
+  CANVAS_NODE_TYPES.storyboardGen,
+];
+const NODE_TYPES_WITH_TARGET_HANDLE: CanvasNodeType[] = [
+  CANVAS_NODE_TYPES.imageEdit,
+  CANVAS_NODE_TYPES.storyboardSplit,
+  CANVAS_NODE_TYPES.storyboardGen,
+];
+
+interface PendingConnectStart {
+  nodeId: string;
+  handleType: HandleType;
+}
+
+interface PreviewConnectionVisual {
+  d: string;
+  stroke: string;
+  strokeWidth: number;
+  strokeLinecap: 'butt' | 'round' | 'square';
+  offsetX: number;
+  offsetY: number;
+}
+
+function resolveAllowedNodeTypes(handleType: HandleType): CanvasNodeType[] {
+  if (handleType === 'source') {
+    return NODE_TYPES_WITH_TARGET_HANDLE;
+  }
+  return NODE_TYPES_WITH_SOURCE_HANDLE;
+}
+
+function getClientPosition(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
+  if ('clientX' in event && 'clientY' in event) {
+    return { x: event.clientX, y: event.clientY };
+  }
+
+  const touch = 'changedTouches' in event
+    ? event.changedTouches[0] ?? event.touches[0]
+    : null;
+  if (!touch) {
+    return null;
+  }
+
+  return { x: touch.clientX, y: touch.clientY };
+}
+
+function createPreviewPath(line: PreviewConnectionLine): string {
+  const { start, end, handleType } = line;
+  const deltaX = end.x - start.x;
+  const curveStrength = Math.max(36, Math.min(120, Math.abs(deltaX) * 0.4));
+  const startControlX = handleType === 'source' ? start.x + curveStrength : start.x - curveStrength;
+  const endControlX = end.x - curveStrength;
+
+  return `M ${start.x} ${start.y} C ${startControlX} ${start.y}, ${endControlX} ${end.y}, ${end.x} ${end.y}`;
+}
+
+interface PreviewConnectionLine {
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  handleType: HandleType;
+}
 
 export function Canvas() {
   const reactFlowInstance = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const suppressNextPaneClickRef = useRef(false);
 
   const [showNodeMenu, setShowNodeMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [flowPosition, setFlowPosition] = useState({ x: 0, y: 0 });
+  const [menuAllowedTypes, setMenuAllowedTypes] = useState<CanvasNodeType[] | undefined>(
+    undefined
+  );
+  const [pendingConnectStart, setPendingConnectStart] = useState<PendingConnectStart | null>(
+    null
+  );
+  const [previewConnectionVisual, setPreviewConnectionVisual] =
+    useState<PreviewConnectionVisual | null>(null);
 
   const isRestoringCanvasRef = useRef(true);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -52,12 +131,17 @@ export function Canvas() {
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const selectedNodeId = useCanvasStore((state) => state.selectedNodeId);
   const deleteNode = useCanvasStore((state) => state.deleteNode);
+  const undo = useCanvasStore((state) => state.undo);
+  const redo = useCanvasStore((state) => state.redo);
   const openToolDialog = useCanvasStore((state) => state.openToolDialog);
   const closeToolDialog = useCanvasStore((state) => state.closeToolDialog);
 
   const getCurrentProject = useProjectStore((state) => state.getCurrentProject);
   const saveCurrentProject = useProjectStore((state) => state.saveCurrentProject);
   const saveCurrentProjectViewport = useProjectStore((state) => state.saveCurrentProjectViewport);
+  const cancelPendingViewportPersist = useProjectStore(
+    (state) => state.cancelPendingViewportPersist
+  );
 
   const persistCanvasSnapshot = useCallback(() => {
     if (isRestoringCanvasRef.current) {
@@ -71,7 +155,13 @@ export function Canvas() {
 
     const currentNodes = useCanvasStore.getState().nodes;
     const currentEdges = useCanvasStore.getState().edges;
-    saveCurrentProject(currentNodes, currentEdges, reactFlowInstance.getViewport());
+    const currentHistory = useCanvasStore.getState().history;
+    saveCurrentProject(
+      currentNodes,
+      currentEdges,
+      reactFlowInstance.getViewport(),
+      currentHistory
+    );
   }, [getCurrentProject, reactFlowInstance, saveCurrentProject]);
 
   const scheduleCanvasPersist = useCallback(
@@ -106,7 +196,7 @@ export function Canvas() {
     isRestoringCanvasRef.current = true;
     const project = getCurrentProject();
     if (project) {
-      setCanvasData(project.nodes, project.edges);
+      setCanvasData(project.nodes, project.edges, project.history);
       requestAnimationFrame(() => {
         reactFlowInstance.setViewport(project.viewport ?? DEFAULT_VIEWPORT, { duration: 0 });
       });
@@ -183,9 +273,40 @@ export function Canvas() {
     [getCurrentProject, saveCurrentProjectViewport]
   );
 
+  const handleMoveStart = useCallback(() => {
+    cancelPendingViewportPersist();
+  }, [cancelPendingViewportPersist]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Delete' || !selectedNodeId) {
+        const commandPressed = event.ctrlKey || event.metaKey;
+        const key = event.key.toLowerCase();
+        const isUndo = commandPressed && key === 'z' && !event.shiftKey;
+        const isRedo = commandPressed && (key === 'y' || (key === 'z' && event.shiftKey));
+
+        if (!isUndo && !isRedo) {
+          return;
+        }
+
+        const target = event.target as HTMLElement | null;
+        if (target) {
+          const tagName = target.tagName.toLowerCase();
+          const isTypingElement =
+            tagName === 'input' ||
+            tagName === 'textarea' ||
+            target.isContentEditable;
+
+          if (isTypingElement) {
+            return;
+          }
+        }
+
+        event.preventDefault();
+        const changed = isUndo ? undo() : redo();
+        if (changed) {
+          scheduleCanvasPersist(0);
+        }
         return;
       }
 
@@ -204,29 +325,67 @@ export function Canvas() {
 
       event.preventDefault();
       deleteNode(selectedNodeId);
+      scheduleCanvasPersist(0);
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedNodeId, deleteNode]);
+  }, [selectedNodeId, deleteNode, undo, redo, scheduleCanvasPersist]);
 
   const handlePaneClick = useCallback(() => {
+    if (suppressNextPaneClickRef.current) {
+      suppressNextPaneClickRef.current = false;
+      return;
+    }
+
     setSelectedNode(null);
     setShowNodeMenu(false);
+    setMenuAllowedTypes(undefined);
+    setPendingConnectStart(null);
+    setPreviewConnectionVisual(null);
   }, [setSelectedNode]);
 
   const handleNodeSelect = useCallback(
     (type: CanvasNodeType) => {
-      addNode(type, flowPosition);
+      const newNodeId = addNode(type, flowPosition);
+      if (pendingConnectStart) {
+        if (pendingConnectStart.handleType === 'source') {
+          connectNodes({
+            source: pendingConnectStart.nodeId,
+            target: newNodeId,
+            sourceHandle: null,
+            targetHandle: null,
+          });
+        } else {
+          connectNodes({
+            source: newNodeId,
+            target: pendingConnectStart.nodeId,
+            sourceHandle: null,
+            targetHandle: null,
+          });
+        }
+      }
+
+      scheduleCanvasPersist(0);
       setShowNodeMenu(false);
+      setMenuAllowedTypes(undefined);
+      setPendingConnectStart(null);
+      setPreviewConnectionVisual(null);
     },
-    [addNode, flowPosition]
+    [
+      addNode,
+      connectNodes,
+      flowPosition,
+      pendingConnectStart,
+      scheduleCanvasPersist,
+      setPreviewConnectionVisual,
+    ]
   );
 
   const handleDoubleClick = useCallback(
-    (event: MouseEvent) => {
+    (event: ReactMouseEvent) => {
       const containerRect = wrapperRef.current?.getBoundingClientRect();
       if (!containerRect) {
         return;
@@ -242,9 +401,134 @@ export function Canvas() {
         x: event.clientX - containerRect.left,
         y: event.clientY - containerRect.top,
       });
+      setMenuAllowedTypes(undefined);
+      setPendingConnectStart(null);
+      setPreviewConnectionVisual(null);
       setShowNodeMenu(true);
     },
     [reactFlowInstance]
+  );
+
+  const handleConnectStart = useCallback(
+    (_event: MouseEvent | TouchEvent, params: OnConnectStartParams) => {
+      setShowNodeMenu(false);
+      setMenuAllowedTypes(undefined);
+      setPreviewConnectionVisual(null);
+
+      if (!params.nodeId || !params.handleType) {
+        setPendingConnectStart(null);
+        return;
+      }
+
+      setPendingConnectStart({
+        nodeId: params.nodeId,
+        handleType: params.handleType,
+      });
+    },
+    []
+  );
+
+  const handleConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
+      if (connectionState.isValid || !pendingConnectStart) {
+        setPendingConnectStart(null);
+        setPreviewConnectionVisual(null);
+        return;
+      }
+
+      const clientPosition = getClientPosition(event);
+      const containerRect = wrapperRef.current?.getBoundingClientRect();
+      if (!clientPosition || !containerRect) {
+        setPendingConnectStart(null);
+        setPreviewConnectionVisual(null);
+        return;
+      }
+
+      const allowedTypes = resolveAllowedNodeTypes(pendingConnectStart.handleType);
+      if (allowedTypes.length === 0) {
+        setPendingConnectStart(null);
+        setPreviewConnectionVisual(null);
+        return;
+      }
+
+      const liveConnectionPath = wrapperRef.current?.querySelector<SVGPathElement>(
+        '.react-flow__connection-path'
+      );
+      const livePathD = liveConnectionPath?.getAttribute('d');
+      if (liveConnectionPath && livePathD) {
+        const style = window.getComputedStyle(liveConnectionPath);
+        const strokeWidth = Number.parseFloat(style.strokeWidth || '1') || 1;
+        const strokeLinecap = (style.strokeLinecap as 'butt' | 'round' | 'square') || 'round';
+        const liveSvg = liveConnectionPath.closest('svg');
+        const liveSvgRect = liveSvg?.getBoundingClientRect();
+        const offsetX = liveSvgRect ? liveSvgRect.left - containerRect.left : 0;
+        const offsetY = liveSvgRect ? liveSvgRect.top - containerRect.top : 0;
+
+        setPreviewConnectionVisual({
+          d: livePathD,
+          stroke: style.stroke || 'rgba(255,255,255,0.9)',
+          strokeWidth,
+          strokeLinecap,
+          offsetX,
+          offsetY,
+        });
+      } else {
+        const endX = clientPosition.x - containerRect.left;
+        const endY = clientPosition.y - containerRect.top;
+        let startX: number | null = null;
+        let startY: number | null = null;
+
+        const nodeElement = wrapperRef.current?.querySelector<HTMLElement>(
+          `.react-flow__node[data-id="${pendingConnectStart.nodeId}"]`
+        );
+        const handleElement = nodeElement?.querySelector<HTMLElement>(
+          `.react-flow__handle-${pendingConnectStart.handleType}`
+        );
+        if (handleElement) {
+          const handleRect = handleElement.getBoundingClientRect();
+          startX = handleRect.left - containerRect.left + handleRect.width / 2;
+          startY = handleRect.top - containerRect.top + handleRect.height / 2;
+        } else if (nodeElement) {
+          const nodeRect = nodeElement.getBoundingClientRect();
+          startX =
+            pendingConnectStart.handleType === 'source'
+              ? nodeRect.right - containerRect.left
+              : nodeRect.left - containerRect.left;
+          startY = nodeRect.top - containerRect.top + nodeRect.height / 2;
+        } else if (connectionState.from) {
+          startX = connectionState.from.x;
+          startY = connectionState.from.y;
+        }
+
+        if (startX !== null && startY !== null) {
+          setPreviewConnectionVisual({
+            d: createPreviewPath({
+              start: { x: startX, y: startY },
+              end: { x: endX, y: endY },
+              handleType: pendingConnectStart.handleType,
+            }),
+            stroke: 'rgba(255,255,255,0.9)',
+            strokeWidth: 1,
+            strokeLinecap: 'round',
+            offsetX: 0,
+            offsetY: 0,
+          });
+        } else {
+          setPreviewConnectionVisual(null);
+        }
+      }
+
+      const flowPos = reactFlowInstance.screenToFlowPosition(clientPosition);
+      setFlowPosition(flowPos);
+      setMenuPosition({
+        x: clientPosition.x - containerRect.left,
+        y: clientPosition.y - containerRect.top,
+      });
+      setMenuAllowedTypes(allowedTypes);
+      suppressNextPaneClickRef.current = true;
+      setShowNodeMenu(true);
+    },
+    [pendingConnectStart, reactFlowInstance]
   );
 
   const emptyHint = useMemo(
@@ -267,8 +551,11 @@ export function Canvas() {
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
+        onConnectStart={handleConnectStart}
+        onConnectEnd={handleConnectEnd}
         onPaneClick={handlePaneClick}
         onDoubleClick={handleDoubleClick}
+        onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -283,7 +570,8 @@ export function Canvas() {
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#2a2a2a" />
         <MiniMap
-          className="canvas-minimap !border-border-dark !bg-surface-dark"
+          className="canvas-minimap nopan nowheel !border-border-dark !bg-surface-dark"
+          style={{ pointerEvents: 'all', zIndex: 10000 }}
           nodeColor="rgba(120, 120, 120, 0.92)"
           maskColor="rgba(0, 0, 0, 0.62)"
           pannable
@@ -295,11 +583,39 @@ export function Canvas() {
 
       {nodes.length === 0 && emptyHint}
 
+      {showNodeMenu && previewConnectionVisual && (
+        <svg
+          className="pointer-events-none absolute inset-0 z-40 h-full w-full overflow-visible"
+          width="100%"
+          height="100%"
+        >
+          <g
+            className="pointer-events-none"
+            transform={`translate(${previewConnectionVisual.offsetX}, ${previewConnectionVisual.offsetY})`}
+          >
+            <path
+              className="pointer-events-none"
+              d={previewConnectionVisual.d}
+              fill="none"
+              stroke={previewConnectionVisual.stroke}
+              strokeWidth={previewConnectionVisual.strokeWidth}
+              strokeLinecap={previewConnectionVisual.strokeLinecap}
+            />
+          </g>
+        </svg>
+      )}
+
       {showNodeMenu && (
         <NodeSelectionMenu
           position={menuPosition}
+          allowedTypes={menuAllowedTypes}
           onSelect={handleNodeSelect}
-          onClose={() => setShowNodeMenu(false)}
+          onClose={() => {
+            setShowNodeMenu(false);
+            setMenuAllowedTypes(undefined);
+            setPendingConnectStart(null);
+            setPreviewConnectionVisual(null);
+          }}
         />
       )}
 

@@ -10,7 +10,7 @@ export function ProjectManager() {
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState('');
 
-  const { projects, createProject, deleteProject, renameProject, openProject } =
+  const { projects, isOpeningProject, createProject, deleteProject, renameProject, openProject } =
     useProjectStore();
 
   const handleCreateProject = () => {
@@ -97,7 +97,7 @@ export function ProjectManager() {
                 </div>
                 <div className="text-xs text-text-muted">
                   <p>
-                    {t('project.nodes')}: {project.nodes.length}
+                    {t('project.nodes')}: {project.nodeCount}
                   </p>
                   <p>
                     {t('project.updatedAt')}: {formatDate(project.updatedAt)}
@@ -108,6 +108,10 @@ export function ProjectManager() {
           </div>
         )}
       </div>
+
+      {isOpeningProject && (
+        <div className="pointer-events-none fixed inset-0 bg-black/10" />
+      )}
 
       <RenameDialog
         isOpen={showRenameDialog}

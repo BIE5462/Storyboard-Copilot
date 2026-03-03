@@ -45,7 +45,11 @@ impl PPIOModelAdapter for Gemini31FlashAdapter {
         )
     }
 
-    fn build_request(&self, request: &GenerateRequest, base_url: &str) -> Result<PreparedRequest, AIError> {
+    fn build_request(
+        &self,
+        request: &GenerateRequest,
+        base_url: &str,
+    ) -> Result<PreparedRequest, AIError> {
         let has_reference_images = request
             .reference_images
             .as_ref()
@@ -59,14 +63,17 @@ impl PPIOModelAdapter for Gemini31FlashAdapter {
                 .map(|images| {
                     images
                         .iter()
-                        .filter_map(|image| image.split(',').nth(1).map(|payload| payload.to_string()))
+                        .filter_map(|image| {
+                            image.split(',').nth(1).map(|payload| payload.to_string())
+                        })
                         .collect::<Vec<String>>()
                 })
                 .unwrap_or_default();
 
             if image_base64s.is_empty() {
                 return Err(AIError::InvalidRequest(
-                    "Reference images are present but no valid base64 payload was found".to_string(),
+                    "Reference images are present but no valid base64 payload was found"
+                        .to_string(),
                 ));
             }
 

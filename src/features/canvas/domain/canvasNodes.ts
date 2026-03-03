@@ -4,6 +4,7 @@ export const CANVAS_NODE_TYPES = {
   upload: 'uploadNode',
   imageEdit: 'imageNode',
   storyboardSplit: 'storyboardNode',
+  storyboardGen: 'storyboardGenNode',
 } as const;
 
 export type CanvasNodeType = (typeof CANVAS_NODE_TYPES)[keyof typeof CANVAS_NODE_TYPES];
@@ -26,6 +27,7 @@ export type ImageSize = (typeof IMAGE_SIZES)[number];
 
 export interface NodeImageData {
   imageUrl: string | null;
+  previewImageUrl?: string | null;
   aspectRatio: string;
   [key: string]: unknown;
 }
@@ -45,6 +47,7 @@ export interface ImageEditNodeData extends NodeImageData {
 export interface StoryboardFrameItem {
   id: string;
   imageUrl: string | null;
+  previewImageUrl?: string | null;
   note: string;
   order: number;
 }
@@ -57,10 +60,33 @@ export interface StoryboardSplitNodeData {
   [key: string]: unknown;
 }
 
+export interface StoryboardGenFrameItem {
+  id: string;
+  description: string;
+  referenceIndex: number | null;
+}
+
+export interface StoryboardGenNodeData {
+  gridRows: number;
+  gridCols: number;
+  frames: StoryboardGenFrameItem[];
+  model: string;
+  size: ImageSize;
+  requestAspectRatio: string;
+  imageUrl: string | null;
+  previewImageUrl?: string | null;
+  aspectRatio: string;
+  isGenerating?: boolean;
+  generationStartedAt?: number | null;
+  generationDurationMs?: number;
+  [key: string]: unknown;
+}
+
 export type CanvasNodeData =
   | UploadImageNodeData
   | ImageEditNodeData
-  | StoryboardSplitNodeData;
+  | StoryboardSplitNodeData
+  | StoryboardGenNodeData;
 
 export type CanvasNode = Node<CanvasNodeData, CanvasNodeType>;
 export type CanvasEdge = Edge;
@@ -109,6 +135,12 @@ export function isStoryboardSplitNode(
   return node?.type === CANVAS_NODE_TYPES.storyboardSplit;
 }
 
+export function isStoryboardGenNode(
+  node: CanvasNode | null | undefined
+): node is Node<StoryboardGenNodeData, typeof CANVAS_NODE_TYPES.storyboardGen> {
+  return node?.type === CANVAS_NODE_TYPES.storyboardGen;
+}
+
 export function nodeHasImage(node: CanvasNode | null | undefined): boolean {
   if (!node) {
     return false;
@@ -120,6 +152,10 @@ export function nodeHasImage(node: CanvasNode | null | undefined): boolean {
 
   if (isStoryboardSplitNode(node)) {
     return node.data.frames.some((frame) => Boolean(frame.imageUrl));
+  }
+
+  if (isStoryboardGenNode(node)) {
+    return Boolean(node.data.imageUrl);
   }
 
   return false;

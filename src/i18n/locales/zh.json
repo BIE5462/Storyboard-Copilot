@@ -35,6 +35,7 @@
       "uploadImage": "上传图片",
       "aiImageGeneration": "AI图片生成",
       "storyboard": "分镜节点",
+      "storyboardGen": "分镜生成",
       "textAnnotation": "文本注释"
     },
     "imageNode": {

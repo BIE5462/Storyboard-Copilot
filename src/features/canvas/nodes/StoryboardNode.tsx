@@ -13,7 +13,7 @@ import type {
   StoryboardFrameItem,
   StoryboardSplitNodeData,
 } from '@/features/canvas/domain/canvasNodes';
-import { readFileAsDataUrl } from '@/features/canvas/application/imageData';
+import { prepareNodeImage, readFileAsDataUrl } from '@/features/canvas/application/imageData';
 import { useCanvasStore } from '@/stores/canvasStore';
 
 type StoryboardNodeProps = NodeProps & {
@@ -52,7 +52,11 @@ const FrameCard = memo(
         }
 
         const imageUrl = await readFileAsDataUrl(file);
-        updateStoryboardFrame(nodeId, frame.id, { imageUrl });
+        const prepared = await prepareNodeImage(imageUrl, 640);
+        updateStoryboardFrame(nodeId, frame.id, {
+          imageUrl: prepared.imageUrl,
+          previewImageUrl: prepared.previewImageUrl,
+        });
         event.target.value = '';
       },
       [frame.id, nodeId, updateStoryboardFrame]
@@ -75,7 +79,11 @@ const FrameCard = memo(
       >
         <div className="relative overflow-hidden rounded-md bg-surface-dark" style={{ aspectRatio: '1 / 1' }}>
           {frame.imageUrl ? (
-            <img src={frame.imageUrl} alt={`Frame ${index + 1}`} className="h-full w-full object-cover" />
+            <img
+              src={frame.previewImageUrl || frame.imageUrl}
+              alt={`Frame ${index + 1}`}
+              className="h-full w-full object-cover"
+            />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-text-muted">空分镜</div>
           )}

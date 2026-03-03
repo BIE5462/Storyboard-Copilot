@@ -15,7 +15,7 @@ import {
   type UploadImageNodeData,
 } from '@/features/canvas/domain/canvasNodes';
 import { canvasEventBus } from '@/features/canvas/application/canvasServices';
-import { detectAspectRatio, readFileAsDataUrl } from '@/features/canvas/application/imageData';
+import { prepareNodeImage, readFileAsDataUrl } from '@/features/canvas/application/imageData';
 import { useCanvasStore } from '@/stores/canvasStore';
 
 type UploadNodeProps = NodeProps & {
@@ -36,11 +36,12 @@ export const UploadNode = memo(({ id, data, selected }: UploadNodeProps) => {
 
   const processFile = useCallback(
     async (file: File) => {
-      const imageUrl = await readFileAsDataUrl(file);
-      const aspectRatio = await detectAspectRatio(imageUrl);
+      const fileDataUrl = await readFileAsDataUrl(file);
+      const prepared = await prepareNodeImage(fileDataUrl);
       updateNodeData(id, {
-        imageUrl,
-        aspectRatio: aspectRatio || DEFAULT_ASPECT_RATIO,
+        imageUrl: prepared.imageUrl,
+        previewImageUrl: prepared.previewImageUrl,
+        aspectRatio: prepared.aspectRatio || DEFAULT_ASPECT_RATIO,
       });
     },
     [id, updateNodeData]
@@ -106,7 +107,11 @@ export const UploadNode = memo(({ id, data, selected }: UploadNodeProps) => {
             aspectRatio: toCssAspectRatio(data.aspectRatio || DEFAULT_ASPECT_RATIO),
           }}
         >
-          <img src={data.imageUrl} alt="Uploaded" className="h-full w-full object-cover" />
+          <img
+            src={data.previewImageUrl || data.imageUrl}
+            alt="Uploaded"
+            className="h-full w-full object-cover"
+          />
         </div>
       ) : (
         <label

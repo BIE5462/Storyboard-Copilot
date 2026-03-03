@@ -34,17 +34,31 @@ export type {
   StoryboardFrameItem,
 };
 
+export interface CanvasHistorySnapshot {
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+}
+
+export interface CanvasHistoryState {
+  past: CanvasHistorySnapshot[];
+  future: CanvasHistorySnapshot[];
+}
+
+const MAX_HISTORY_STEPS = 50;
+
 interface CanvasState {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   selectedNodeId: string | null;
   activeToolDialog: ActiveToolDialog | null;
+  history: CanvasHistoryState;
+  dragHistorySnapshot: CanvasHistorySnapshot | null;
 
   onNodesChange: (changes: NodeChange<CanvasNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<CanvasEdge>[]) => void;
   onConnect: (connection: Connection) => void;
 
-  setCanvasData: (nodes: CanvasNode[], edges: CanvasEdge[]) => void;
+  setCanvasData: (nodes: CanvasNode[], edges: CanvasEdge[], history?: CanvasHistoryState) => void;
   addNode: (
     type: CanvasNodeType,
     position: { x: number; y: number },
@@ -53,7 +67,8 @@ interface CanvasState {
   addDerivedUploadNode: (
     sourceNodeId: string,
     imageUrl: string,
-    aspectRatio: string
+    aspectRatio: string,
+    previewImageUrl?: string
   ) => string | null;
   addStoryboardSplitNode: (
     sourceNodeId: string,
@@ -63,6 +78,7 @@ interface CanvasState {
   ) => string | null;
 
   updateNodeData: (nodeId: string, data: Partial<CanvasNodeData>) => void;
+  updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   updateStoryboardFrame: (
     nodeId: string,
     frameId: string,
@@ -81,7 +97,17 @@ interface CanvasState {
   openToolDialog: (dialog: ActiveToolDialog) => void;
   closeToolDialog: () => void;
 
+  undo: () => boolean;
+  redo: () => boolean;
+
   clearCanvas: () => void;
+}
+
+function normalizeEdges(rawEdges: CanvasEdge[]): CanvasEdge[] {
+  return rawEdges.map((edge) => ({
+    ...edge,
+    type: edge.type ?? 'disconnectableEdge',
+  }));
 }
 
 function normalizeNodes(rawNodes: CanvasNode[]): CanvasNode[] {
@@ -102,6 +128,7 @@ function normalizeNodes(rawNodes: CanvasNode[]): CanvasNode[] {
         (mergedData as { frames: StoryboardFrameItem[] }).frames = frames.map((frame, index) => ({
           id: frame.id,
           imageUrl: frame.imageUrl ?? null,
+          previewImageUrl: frame.previewImageUrl ?? null,
           note: frame.note ?? '',
           order: Number.isFinite(frame.order) ? frame.order : index,
         }));
@@ -120,6 +147,42 @@ function normalizeNodes(rawNodes: CanvasNode[]): CanvasNode[] {
     .filter((node): node is CanvasNode => Boolean(node));
 }
 
+function normalizeHistory(history?: CanvasHistoryState): CanvasHistoryState {
+  if (!history) {
+    return { past: [], future: [] };
+  }
+
+  const normalizeSnapshot = (snapshot: CanvasHistorySnapshot): CanvasHistorySnapshot => ({
+    nodes: normalizeNodes(snapshot.nodes),
+    edges: normalizeEdges(snapshot.edges),
+  });
+
+  return {
+    past: history.past.slice(-MAX_HISTORY_STEPS).map(normalizeSnapshot),
+    future: history.future.slice(-MAX_HISTORY_STEPS).map(normalizeSnapshot),
+  };
+}
+
+function createSnapshot(nodes: CanvasNode[], edges: CanvasEdge[]): CanvasHistorySnapshot {
+  return { nodes, edges };
+}
+
+function pushSnapshot(
+  snapshots: CanvasHistorySnapshot[],
+  snapshot: CanvasHistorySnapshot
+): CanvasHistorySnapshot[] {
+  const last = snapshots[snapshots.length - 1];
+  if (last && last.nodes === snapshot.nodes && last.edges === snapshot.edges) {
+    return snapshots;
+  }
+
+  const next = [...snapshots, snapshot];
+  if (next.length > MAX_HISTORY_STEPS) {
+    next.shift();
+  }
+  return next;
+}
+
 function getDerivedNodePosition(nodes: CanvasNode[], sourceNodeId: string): { x: number; y: number } {
   const sourceNode = nodes.find((node) => node.id === sourceNodeId);
   if (!sourceNode) {
@@ -132,66 +195,165 @@ function getDerivedNodePosition(nodes: CanvasNode[], sourceNodeId: string): { x:
   };
 }
 
+function resolveSelectedNodeId(selectedNodeId: string | null, nodes: CanvasNode[]): string | null {
+  if (!selectedNodeId) {
+    return null;
+  }
+  return nodes.some((node) => node.id === selectedNodeId) ? selectedNodeId : null;
+}
+
+function resolveActiveToolDialog(
+  activeToolDialog: ActiveToolDialog | null,
+  nodes: CanvasNode[]
+): ActiveToolDialog | null {
+  if (!activeToolDialog) {
+    return null;
+  }
+  return nodes.some((node) => node.id === activeToolDialog.nodeId) ? activeToolDialog : null;
+}
+
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,
   activeToolDialog: null,
+  history: { past: [], future: [] },
+  dragHistorySnapshot: null,
 
   onNodesChange: (changes) => {
-    set({
-      nodes: applyNodeChanges<CanvasNode>(changes, get().nodes),
+    set((state) => {
+      const nextNodes = applyNodeChanges<CanvasNode>(changes, state.nodes);
+      const hasMeaningfulChange = changes.some((change) => change.type !== 'select');
+      const hasDragMove = changes.some(
+        (change) =>
+          change.type === 'position' &&
+          'dragging' in change &&
+          Boolean(change.dragging)
+      );
+      const hasDragEnd = changes.some(
+        (change) =>
+          change.type === 'position' &&
+          'dragging' in change &&
+          change.dragging === false
+      );
+
+      let nextHistory = state.history;
+      let nextDragHistorySnapshot = state.dragHistorySnapshot;
+
+      if (hasDragMove && !nextDragHistorySnapshot) {
+        nextDragHistorySnapshot = createSnapshot(state.nodes, state.edges);
+      }
+
+      if (hasDragEnd) {
+        const snapshot = nextDragHistorySnapshot ?? createSnapshot(state.nodes, state.edges);
+        nextHistory = {
+          past: pushSnapshot(state.history.past, snapshot),
+          future: [],
+        };
+        nextDragHistorySnapshot = null;
+      } else if (hasMeaningfulChange && !hasDragMove) {
+        nextHistory = {
+          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+          future: [],
+        };
+        nextDragHistorySnapshot = null;
+      }
+
+      return {
+        nodes: nextNodes,
+        selectedNodeId: resolveSelectedNodeId(state.selectedNodeId, nextNodes),
+        activeToolDialog: resolveActiveToolDialog(state.activeToolDialog, nextNodes),
+        history: nextHistory,
+        dragHistorySnapshot: nextDragHistorySnapshot,
+      };
     });
   },
 
   onEdgesChange: (changes) => {
-    set({
-      edges: applyEdgeChanges<CanvasEdge>(changes, get().edges),
+    set((state) => {
+      const nextEdges = applyEdgeChanges<CanvasEdge>(changes, state.edges);
+      const hasMeaningfulChange = changes.some((change) => change.type !== 'select');
+
+      if (!hasMeaningfulChange) {
+        return { edges: nextEdges };
+      }
+
+      return {
+        edges: nextEdges,
+        history: {
+          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+          future: [],
+        },
+        dragHistorySnapshot: null,
+      };
     });
   },
 
   onConnect: (connection) => {
-    set({
-      edges: addEdge<CanvasEdge>({ ...connection, type: 'disconnectableEdge' }, get().edges),
-    });
+    set((state) => ({
+      edges: addEdge<CanvasEdge>({ ...connection, type: 'disconnectableEdge' }, state.edges),
+      history: {
+        past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+        future: [],
+      },
+      dragHistorySnapshot: null,
+    }));
   },
 
-  setCanvasData: (nodes, edges) => {
+  setCanvasData: (nodes, edges, history) => {
+    const normalizedNodes = normalizeNodes(nodes);
+    const normalizedEdges = normalizeEdges(edges);
+
     set({
-      nodes: normalizeNodes(nodes),
-      edges: edges.map((edge) => ({
-        ...edge,
-        type: edge.type ?? 'disconnectableEdge',
-      })),
+      nodes: normalizedNodes,
+      edges: normalizedEdges,
       selectedNodeId: null,
       activeToolDialog: null,
+      history: normalizeHistory(history),
+      dragHistorySnapshot: null,
     });
   },
 
   addNode: (type, position, data = {}) => {
+    const state = get();
     const newNode = canvasNodeFactory.createNode(type, position, data);
-    set({ nodes: [...get().nodes, newNode] });
+    set({
+      nodes: [...state.nodes, newNode],
+      history: {
+        past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+        future: [],
+      },
+      dragHistorySnapshot: null,
+    });
     return newNode.id;
   },
 
-  addDerivedUploadNode: (sourceNodeId, imageUrl, aspectRatio) => {
-    const position = getDerivedNodePosition(get().nodes, sourceNodeId);
+  addDerivedUploadNode: (sourceNodeId, imageUrl, aspectRatio, previewImageUrl) => {
+    const state = get();
+    const position = getDerivedNodePosition(state.nodes, sourceNodeId);
     const node = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.upload, position, {
       imageUrl,
+      previewImageUrl: previewImageUrl ?? null,
       aspectRatio,
     });
 
-    set((state) => ({
+    set({
       nodes: [...state.nodes, node],
       selectedNodeId: node.id,
       activeToolDialog: null,
-    }));
+      history: {
+        past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+        future: [],
+      },
+      dragHistorySnapshot: null,
+    });
 
     return node.id;
   },
 
   addStoryboardSplitNode: (sourceNodeId, rows, cols, frames) => {
-    const position = getDerivedNodePosition(get().nodes, sourceNodeId);
+    const state = get();
+    const position = getDerivedNodePosition(state.nodes, sourceNodeId);
     const node = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.storyboardSplit, position, {
       gridRows: rows,
       gridCols: cols,
@@ -199,59 +361,128 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       aspectRatio: `${cols}:${rows}`,
     });
 
-    set((state) => ({
+    set({
       nodes: [...state.nodes, node],
       selectedNodeId: node.id,
       activeToolDialog: null,
-    }));
+      history: {
+        past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+        future: [],
+      },
+      dragHistorySnapshot: null,
+    });
 
     return node.id;
   },
 
   updateNodeData: (nodeId, data) => {
-    set({
-      nodes: get().nodes.map((node) =>
-        node.id === nodeId
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                ...data,
-              } as CanvasNodeData,
-            }
-          : node
-      ),
+    set((state) => {
+      let changed = false;
+      const nextNodes = state.nodes.map((node) => {
+        if (node.id !== nodeId) {
+          return node;
+        }
+
+        changed = true;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            ...data,
+          } as CanvasNodeData,
+        };
+      });
+
+      if (!changed) {
+        return {};
+      }
+
+      return {
+        nodes: nextNodes,
+        history: {
+          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+          future: [],
+        },
+        dragHistorySnapshot: null,
+      };
+    });
+  },
+
+  updateNodePosition: (nodeId, position) => {
+    set((state) => {
+      let changed = false;
+      const nextNodes = state.nodes.map((node) => {
+        if (node.id !== nodeId) {
+          return node;
+        }
+
+        if (node.position.x === position.x && node.position.y === position.y) {
+          return node;
+        }
+
+        changed = true;
+        return {
+          ...node,
+          position,
+        };
+      });
+
+      if (!changed) {
+        return {};
+      }
+
+      return { nodes: nextNodes };
     });
   },
 
   updateStoryboardFrame: (nodeId, frameId, data) => {
-    set({
-      nodes: get().nodes.map((node) => {
+    set((state) => {
+      let changed = false;
+      const nextNodes = state.nodes.map((node) => {
         if (node.id !== nodeId || !isStoryboardSplitNode(node)) {
           return node;
         }
+
+        const nextFrames = node.data.frames.map((frame) => {
+          if (frame.id !== frameId) {
+            return frame;
+          }
+
+          changed = true;
+          return {
+            ...frame,
+            ...data,
+          };
+        });
 
         return {
           ...node,
           data: {
             ...node.data,
-            frames: node.data.frames.map((frame) =>
-              frame.id === frameId
-                ? {
-                    ...frame,
-                    ...data,
-                  }
-                : frame
-            ),
+            frames: nextFrames,
           },
         };
-      }),
+      });
+
+      if (!changed) {
+        return {};
+      }
+
+      return {
+        nodes: nextNodes,
+        history: {
+          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+          future: [],
+        },
+        dragHistorySnapshot: null,
+      };
     });
   },
 
   reorderStoryboardFrame: (nodeId, draggedFrameId, targetFrameId) => {
-    set({
-      nodes: get().nodes.map((node) => {
+    set((state) => {
+      let changed = false;
+      const nextNodes = state.nodes.map((node) => {
         if (node.id !== nodeId || !isStoryboardSplitNode(node)) {
           return node;
         }
@@ -264,6 +495,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           return node;
         }
 
+        changed = true;
         const [movedFrame] = frames.splice(fromIndex, 1);
         frames.splice(toIndex, 0, movedFrame);
 
@@ -277,23 +509,63 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             })),
           },
         };
-      }),
+      });
+
+      if (!changed) {
+        return {};
+      }
+
+      return {
+        nodes: nextNodes,
+        history: {
+          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+          future: [],
+        },
+        dragHistorySnapshot: null,
+      };
     });
   },
 
   deleteNode: (nodeId) => {
-    set((state) => ({
-      nodes: state.nodes.filter((node) => node.id !== nodeId),
-      edges: state.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
-      selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
-      activeToolDialog: state.activeToolDialog?.nodeId === nodeId ? null : state.activeToolDialog,
-    }));
+    set((state) => {
+      const hasNode = state.nodes.some((node) => node.id === nodeId);
+      if (!hasNode) {
+        return {};
+      }
+
+      const nextNodes = state.nodes.filter((node) => node.id !== nodeId);
+      const nextEdges = state.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId);
+
+      return {
+        nodes: nextNodes,
+        edges: nextEdges,
+        selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
+        activeToolDialog: state.activeToolDialog?.nodeId === nodeId ? null : state.activeToolDialog,
+        history: {
+          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+          future: [],
+        },
+        dragHistorySnapshot: null,
+      };
+    });
   },
 
   deleteEdge: (edgeId) => {
-    set((state) => ({
-      edges: state.edges.filter((edge) => edge.id !== edgeId),
-    }));
+    set((state) => {
+      const hasEdge = state.edges.some((edge) => edge.id === edgeId);
+      if (!hasEdge) {
+        return {};
+      }
+
+      return {
+        edges: state.edges.filter((edge) => edge.id !== edgeId),
+        history: {
+          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+          future: [],
+        },
+        dragHistorySnapshot: null,
+      };
+    });
   },
 
   setSelectedNode: (nodeId) => {
@@ -308,12 +580,71 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set({ activeToolDialog: null });
   },
 
-  clearCanvas: () => {
+  undo: () => {
+    const state = get();
+    const target = state.history.past[state.history.past.length - 1];
+    if (!target) {
+      return false;
+    }
+
+    const currentSnapshot = createSnapshot(state.nodes, state.edges);
+    const nextPast = state.history.past.slice(0, -1);
+
     set({
-      nodes: [],
-      edges: [],
-      selectedNodeId: null,
-      activeToolDialog: null,
+      nodes: target.nodes,
+      edges: target.edges,
+      selectedNodeId: resolveSelectedNodeId(state.selectedNodeId, target.nodes),
+      activeToolDialog: resolveActiveToolDialog(state.activeToolDialog, target.nodes),
+      history: {
+        past: nextPast,
+        future: pushSnapshot(state.history.future, currentSnapshot),
+      },
+      dragHistorySnapshot: null,
+    });
+    return true;
+  },
+
+  redo: () => {
+    const state = get();
+    const target = state.history.future[state.history.future.length - 1];
+    if (!target) {
+      return false;
+    }
+
+    const currentSnapshot = createSnapshot(state.nodes, state.edges);
+    const nextFuture = state.history.future.slice(0, -1);
+
+    set({
+      nodes: target.nodes,
+      edges: target.edges,
+      selectedNodeId: resolveSelectedNodeId(state.selectedNodeId, target.nodes),
+      activeToolDialog: resolveActiveToolDialog(state.activeToolDialog, target.nodes),
+      history: {
+        past: pushSnapshot(state.history.past, currentSnapshot),
+        future: nextFuture,
+      },
+      dragHistorySnapshot: null,
+    });
+    return true;
+  },
+
+  clearCanvas: () => {
+    set((state) => {
+      if (state.nodes.length === 0 && state.edges.length === 0) {
+        return {};
+      }
+
+      return {
+        nodes: [],
+        edges: [],
+        selectedNodeId: null,
+        activeToolDialog: null,
+        history: {
+          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+          future: [],
+        },
+        dragHistorySnapshot: null,
+      };
     });
   },
 }));

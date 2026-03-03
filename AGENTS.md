@@ -4,7 +4,7 @@
 
 - 产品目标：基于节点画布进行图片上传、AI 生成/编辑、工具处理（裁剪/标注/分镜）。
 - 前端：React + TypeScript + Zustand + @xyflow/react + TailwindCSS。
-- 后端：Tauri 2 + Rust（命令式接口）。
+- 后端：Tauri 2 + Rust（命令式接口）+ SQLite（rusqlite，WAL）。
 - 关键原则：解耦、可扩展、可回归验证、自动持久化、交互性能优先。
 
 ## 2. 代码库浏览顺序
@@ -42,7 +42,9 @@
 
 6. Tauri 命令与持久化
 - `src/commands/*.ts`
+- `src/commands/projectState.ts`
 - `src-tauri/src/commands/*.rs`
+- `src-tauri/src/commands/project_state.rs`
 - `src-tauri/src/lib.rs`
 
 ## 3. 开发工作流
@@ -129,7 +131,10 @@ npm run build
 
 - 禁止在拖拽每一帧执行重持久化或重计算。
 - 节点拖拽中不要写盘；拖拽结束再保存（项目已按该策略优化）。
-- 大图片场景避免重复 `dataURL` 转换；只在必要节点执行。
+- 大图片场景避免重复 `dataURL` 转换；节点渲染优先使用 `previewImageUrl`，模型/工具处理使用原图 `imageUrl`。
+- 项目整量持久化（nodes/edges/history）使用防抖 + 空闲调度（idle callback）队列，避免与交互争用主线程。
+- viewport 持久化走独立轻量队列与独立命令（`update_project_viewport_record`），不要回退到整项目 upsert。
+- 视口更新要做归一化与阈值比较（epsilon），过滤微小抖动写入。
 - 优先使用 `useMemo/useCallback` 控制重渲染；避免把大对象直接塞进依赖导致抖动。
 - 画布交互优先“流畅”而非“实时全量持久化”，可使用短延迟合并保存。
 
@@ -157,7 +162,15 @@ npm run build
 
 - 项目数据通过 `projectStore` 自动持久化，不要求手动保存。
 - 重启默认进入项目页；进入项目时恢复上次 viewport。
-- 改动持久化结构时必须写迁移逻辑（`version + migrate`）。
+- 当前持久化后端为 SQLite，库文件位于 Tauri `app_data_dir/projects.db`。
+- `projects` 表核心字段：`nodes_json`、`edges_json`、`viewport_json`、`history_json`、`node_count`。
+- 前端持久化采用双通道：
+  - 整项目快照：`upsert_project_record`（防抖 + idle 调度）。
+  - 视口快照：`update_project_viewport_record`（轻量更新、独立防抖）。
+- 图片字段通过 `imagePool + __img_ref__` 做去重编码；新增图片字段（如 `previewImageUrl`）需同步编码/解码映射。
+- 变更 SQLite 表结构时：
+  - 必须在 `ensure_projects_table` 中做自愈（`PRAGMA table_info` + `ALTER TABLE`）。
+  - 开发阶段可不兼容旧的临时草稿格式，但不能破坏当前 `projects.db` 的基本可读性。
 
 ## 10. 提交前检查清单
 

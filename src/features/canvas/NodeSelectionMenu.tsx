@@ -8,6 +8,7 @@ import type { MenuIconKey } from '@/features/canvas/domain/nodeRegistry';
 
 interface NodeSelectionMenuProps {
   position: { x: number; y: number };
+  allowedTypes?: CanvasNodeType[];
   onSelect: (type: CanvasNodeType) => void;
   onClose: () => void;
 }
@@ -18,12 +19,29 @@ const iconMap: Record<MenuIconKey, typeof Upload> = {
   layout: LayoutGrid,
 };
 
-export function NodeSelectionMenu({ position, onSelect, onClose }: NodeSelectionMenuProps) {
+export function NodeSelectionMenu({
+  position,
+  allowedTypes,
+  onSelect,
+  onClose,
+}: NodeSelectionMenuProps) {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
 
-  const menuItems = useMemo(() => nodeCatalog.getMenuDefinitions(), []);
+  const allowedTypeSet = useMemo(
+    () => (allowedTypes ? new Set(allowedTypes) : null),
+    [allowedTypes]
+  );
+
+  const menuItems = useMemo(() => {
+    if (!allowedTypeSet || !allowedTypes) {
+      return nodeCatalog.getMenuDefinitions();
+    }
+
+    const dedupedTypes = Array.from(new Set(allowedTypes));
+    return dedupedTypes.map((type) => nodeCatalog.getDefinition(type));
+  }, [allowedTypeSet, allowedTypes]);
 
   useEffect(() => {
     requestAnimationFrame(() => {

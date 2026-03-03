@@ -15,8 +15,8 @@ pub async fn split_image(
         .decode(&image_base64)
         .map_err(|e| format!("Failed to decode base64: {}", e))?;
 
-    let img = image::load_from_memory(&image_data)
-        .map_err(|e| format!("Failed to load image: {}", e))?;
+    let img =
+        image::load_from_memory(&image_data).map_err(|e| format!("Failed to load image: {}", e))?;
 
     let (width, height) = img.dimensions();
     let cell_width = width / cols;
@@ -53,8 +53,7 @@ pub async fn save_image(image_base64: String, file_path: String) -> Result<(), S
         .decode(&image_base64)
         .map_err(|e| format!("Failed to decode base64: {}", e))?;
 
-    std::fs::write(&file_path, image_data)
-        .map_err(|e| format!("Failed to write file: {}", e))?;
+    std::fs::write(&file_path, image_data).map_err(|e| format!("Failed to write file: {}", e))?;
 
     info!("Image saved successfully");
     Ok(())
@@ -64,8 +63,8 @@ pub async fn save_image(image_base64: String, file_path: String) -> Result<(), S
 pub async fn load_image(file_path: String) -> Result<String, String> {
     info!("Loading image from: {}", file_path);
 
-    let image_data = std::fs::read(&file_path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let image_data =
+        std::fs::read(&file_path).map_err(|e| format!("Failed to read file: {}", e))?;
 
     let base64_data = STANDARD.encode(&image_data);
 

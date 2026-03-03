@@ -7,7 +7,9 @@ pub struct PPIOModelRegistry {
 
 impl PPIOModelRegistry {
     pub fn new() -> Self {
-        let mut registry = Self { adapters: Vec::new() };
+        let mut registry = Self {
+            adapters: Vec::new(),
+        };
         registry.register(Box::new(Gemini31FlashAdapter::new()));
         registry
     }

@@ -11,12 +11,26 @@ function App() {
   const { theme } = useThemeStore();
   const [showSettings, setShowSettings] = useState(false);
 
+  const isHydrated = useProjectStore((state) => state.isHydrated);
+  const hydrate = useProjectStore((state) => state.hydrate);
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
   const closeProject = useProjectStore((state) => state.closeProject);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
+
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
+
+  if (!isHydrated) {
+    return (
+      <ReactFlowProvider>
+        <div className="w-full h-full bg-bg-dark" />
+      </ReactFlowProvider>
+    );
+  }
 
   return (
     <ReactFlowProvider>

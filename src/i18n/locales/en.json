@@ -35,6 +35,7 @@
       "uploadImage": "Upload Image",
       "aiImageGeneration": "AI Image Generation",
       "storyboard": "Storyboard Node",
+      "storyboardGen": "Storyboard Generation",
       "textAnnotation": "Text Annotation"
     },
     "imageNode": {

@@ -100,6 +100,23 @@ body {
 .canvas-minimap {
   border-radius: 12px;
   overflow: hidden;
+  pointer-events: auto !important;
+}
+
+.canvas-minimap .react-flow__minimap-svg,
+.canvas-minimap .react-flow__minimap-mask,
+.canvas-minimap .react-flow__minimap-node {
+  pointer-events: all;
+}
+
+.react-flow__pane.selection .canvas-minimap {
+  pointer-events: auto !important;
+}
+
+.react-flow__pane.selection .canvas-minimap .react-flow__minimap-svg,
+.react-flow__pane.selection .canvas-minimap .react-flow__minimap-mask,
+.react-flow__pane.selection .canvas-minimap .react-flow__minimap-node {
+  pointer-events: all !important;
 }
 
 .canvas-minimap .react-flow__minimap-mask {

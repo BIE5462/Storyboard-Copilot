@@ -62,10 +62,7 @@ impl AIProvider for PPIOProvider {
         self.model_registry.supports(model)
     }
 
-    async fn generate(
-        &self,
-        request: crate::ai::GenerateRequest,
-    ) -> Result<String, AIError> {
+    async fn generate(&self, request: crate::ai::GenerateRequest) -> Result<String, AIError> {
         let key = self.api_key.read().await;
         let api_key = key
             .as_ref()

@@ -5,6 +5,7 @@ import {
 } from '../domain/canvasNodes';
 import {
   canvasToDataUrl,
+  createPreviewDataUrl,
   extractBase64Payload,
   imageUrlToDataUrl,
   loadImageElement,
@@ -201,12 +202,15 @@ export class CanvasToolProcessor implements ToolProcessor {
       outputs = await this.localSplit(sourceImage, rows, cols);
     }
 
-    const frames: StoryboardFrameItem[] = outputs.map((imageUrl, index) => ({
-      id: this.idGenerator.next(),
-      imageUrl,
-      note: '',
-      order: index,
-    }));
+    const frames: StoryboardFrameItem[] = await Promise.all(
+      outputs.map(async (imageUrl, index) => ({
+        id: this.idGenerator.next(),
+        imageUrl,
+        previewImageUrl: await createPreviewDataUrl(imageUrl, 640),
+        note: '',
+        order: index,
+      }))
+    );
 
     return {
       storyboardFrames: frames,

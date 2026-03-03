@@ -1,9 +1,9 @@
 pub mod ai;
 pub mod commands;
 
+use commands::ai as ai_commands;
 use commands::image;
 use commands::project_state;
-use commands::ai as ai_commands;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -35,9 +35,12 @@ pub fn run() {
             ai_commands::set_api_key,
             ai_commands::generate_image,
             ai_commands::list_models,
-            project_state::save_project_state,
-            project_state::load_project_state,
-            project_state::clear_project_state,
+            project_state::list_project_summaries,
+            project_state::get_project_record,
+            project_state::upsert_project_record,
+            project_state::update_project_viewport_record,
+            project_state::rename_project_record,
+            project_state::delete_project_record,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

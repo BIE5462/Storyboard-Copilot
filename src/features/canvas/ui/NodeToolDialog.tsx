@@ -5,7 +5,7 @@ import {
   canvasEventBus,
   canvasToolProcessor,
 } from '@/features/canvas/application/canvasServices';
-import { detectAspectRatio } from '@/features/canvas/application/imageData';
+import { prepareNodeImage } from '@/features/canvas/application/imageData';
 import { getToolPlugin, type ToolOptions } from '@/features/canvas/tools';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { UiButton, UiModal } from '@/components/ui';
@@ -91,8 +91,13 @@ export function NodeToolDialog() {
           result.storyboardFrames
         );
       } else if (result.outputImageUrl) {
-        const aspectRatio = await detectAspectRatio(result.outputImageUrl);
-        addDerivedUploadNode(sourceNode.id, result.outputImageUrl, aspectRatio);
+        const prepared = await prepareNodeImage(result.outputImageUrl);
+        addDerivedUploadNode(
+          sourceNode.id,
+          prepared.imageUrl,
+          prepared.aspectRatio,
+          prepared.previewImageUrl
+        );
       }
 
       closeDialog();
