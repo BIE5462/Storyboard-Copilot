@@ -33,6 +33,8 @@ const toolIconMap: Record<ToolIconKey, typeof Crop> = {
 };
 
 const TOOLBAR_BUTTON_RADIUS_CLASS = 'rounded-full';
+const TOOLBAR_NEUTRAL_BUTTON_CLASS =
+  'border-[rgba(255,255,255,0.18)] bg-bg-dark/70 text-text-dark hover:border-[rgba(255,255,255,0.32)] hover:bg-bg-dark';
 
 export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
   const tools = useMemo(() => getNodeToolPlugins(node), [node]);
@@ -41,7 +43,9 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
   const canReupload = isUploadNode(node) && Boolean(node.data.imageUrl);
   const downloadPresetPaths = useSettingsStore((state) => state.downloadPresetPaths);
   const [downloadMenu, setDownloadMenu] = useState<{ x: number; y: number } | null>(null);
+  const [isCopySuccess, setIsCopySuccess] = useState(false);
   const downloadMenuRef = useRef<HTMLDivElement | null>(null);
+  const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const imageSource = useMemo(() => {
     if (isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node)) {
       return node.data.imageUrl || node.data.previewImageUrl || null;
@@ -73,10 +77,27 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
     };
   }, [downloadMenu]);
 
+  useEffect(() => {
+    return () => {
+      if (copyFeedbackTimerRef.current) {
+        clearTimeout(copyFeedbackTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleCopyImage = useCallback(async () => {
     if (!imageSource) {
       return;
     }
+
+    setIsCopySuccess(true);
+    if (copyFeedbackTimerRef.current) {
+      clearTimeout(copyFeedbackTimerRef.current);
+    }
+    copyFeedbackTimerRef.current = setTimeout(() => {
+      setIsCopySuccess(false);
+      copyFeedbackTimerRef.current = null;
+    }, 1100);
 
     try {
       await copyImageSourceToClipboard(imageSource);
@@ -135,7 +156,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
           return (
             <UiChipButton
               key={tool.type}
-              className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs`}
+              className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`}
               onClick={() =>
                 canvasEventBus.publish('tool-dialog/open', {
                   nodeId: node.id,
@@ -151,7 +172,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
         {canReupload && (
           <UiChipButton
             key="upload-reupload"
-            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs`}
+            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`}
             onClick={() =>
               canvasEventBus.publish('upload-node/reupload', {
                 nodeId: node.id,
@@ -165,7 +186,11 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
         {canHandleImage && (
           <UiChipButton
             key="image-copy"
-            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs`}
+            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS} ${
+              isCopySuccess
+                ? '!border-emerald-400/70 !bg-emerald-500/20 !text-emerald-200 hover:!bg-emerald-500/30'
+                : ''
+            }`}
             onClick={() => {
               void handleCopyImage();
             }}
@@ -177,7 +202,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
         {canHandleImage && (
           <UiChipButton
             key="image-download"
-            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs`}
+            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`}
             onClick={(event) => {
               event.stopPropagation();
               if (downloadPresetPaths.length === 0) {
@@ -197,7 +222,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
         {isGroupNode(node) && (
           <UiChipButton
             key="group-ungroup"
-            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} border-amber-500/45 bg-amber-500/15 px-2.5 text-xs text-amber-300 hover:bg-amber-500/25`}
+            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS} hover:!border-amber-400/60 hover:!bg-amber-500/20 hover:!text-amber-200`}
             onClick={(event) => {
               event.stopPropagation();
               setDownloadMenu(null);
