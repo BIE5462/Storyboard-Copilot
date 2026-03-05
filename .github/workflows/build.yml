@@ -51,14 +51,20 @@ jobs:
       - name: Rename Windows installer
         shell: pwsh
         run: |
-          $VERSION = $env:GITHUB_REF -replace 'refs/tags/v', ''
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $VERSION = $env:GITHUB_REF -replace 'refs/tags/v', ''
+          } else {
+            $VERSION = (Get-Content package.json | ConvertFrom-Json).version
+          }
           # Rename NSIS installer
           $NSIS_PATH = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
           if ($NSIS_PATH) {
             $NEW_NAME = "Storyboard-Copilot_${VERSION}_x64-setup.exe"
-            $NEW_PATH = Join-Path (Split-Path $NSIS_PATH) $NEW_NAME
-            Move-Item -Path $NSIS_PATH -Destination $NEW_PATH -Force
+            $NEW_PATH = Join-Path (Split-Path $NSIS_PATH.FullName) $NEW_NAME
+            Move-Item -Path $NSIS_PATH.FullName -Destination $NEW_PATH -Force
             Write-Host "Renamed to: $NEW_NAME"
+          } else {
+            throw "No NSIS installer found under src-tauri/target/release/bundle/nsis"
           }
 
       - name: Upload Windows installer
@@ -113,8 +119,16 @@ jobs:
 
       - name: Rename macOS DMG
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION=$(node -p "require('./package.json').version")
+          fi
           DMG_PATH=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" | head -n 1)
+          if [ -z "$DMG_PATH" ]; then
+            echo "No DMG found under src-tauri/target/universal-apple-darwin/release/bundle/dmg"
+            exit 1
+          fi
           NEW_NAME="Storyboard-Copilot_${VERSION}_universal.dmg"
           NEW_PATH="$(dirname "$DMG_PATH")/$NEW_NAME"
           mv "$DMG_PATH" "$NEW_PATH"

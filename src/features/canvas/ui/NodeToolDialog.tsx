@@ -30,6 +30,7 @@ export function NodeToolDialog() {
   const nodes = useCanvasStore((state) => state.nodes);
   const addDerivedExportNode = useCanvasStore((state) => state.addDerivedExportNode);
   const addStoryboardSplitNode = useCanvasStore((state) => state.addStoryboardSplitNode);
+  const addEdge = useCanvasStore((state) => state.addEdge);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,6 +185,15 @@ export function NodeToolDialog() {
     }
     return '';
   }, [t]);
+  const resolveResultNodeTitle = useCallback((toolType: NodeToolType | undefined) => {
+    if (toolType === NODE_TOOL_TYPES.crop) {
+      return t('toolDialog.cropResultTitle');
+    }
+    if (toolType === NODE_TOOL_TYPES.annotate) {
+      return t('toolDialog.annotateResultTitle');
+    }
+    return EXPORT_RESULT_DISPLAY_NAME.generic;
+  }, [t]);
 
   const handleApply = useCallback(async () => {
     if (!activeToolDialog || !sourceNode || !sourceImageUrl || !activePlugin) {
@@ -201,25 +211,33 @@ export function NodeToolDialog() {
       });
 
       if (result.storyboardFrames && result.rows && result.cols) {
-        addStoryboardSplitNode(
+        const createdNodeId = addStoryboardSplitNode(
           sourceNode.id,
           result.rows,
           result.cols,
           result.storyboardFrames,
           result.frameAspectRatio
         );
+        if (createdNodeId) {
+          addEdge(sourceNode.id, createdNodeId);
+        }
       } else if (result.outputImageUrl) {
         const prepared = await prepareNodeImage(result.outputImageUrl);
-        addDerivedExportNode(
+        const createdNodeId = addDerivedExportNode(
           sourceNode.id,
           prepared.imageUrl,
           prepared.aspectRatio,
           prepared.previewImageUrl,
           {
-            defaultTitle: EXPORT_RESULT_DISPLAY_NAME.generic,
+            defaultTitle: resolveResultNodeTitle(activeToolDialog.toolType),
             resultKind: 'generic',
+            aspectRatioStrategy: 'provided',
+            sizeStrategy: 'autoMinEdge',
           }
         );
+        if (createdNodeId) {
+          addEdge(sourceNode.id, createdNodeId);
+        }
       }
 
       closeDialog();
@@ -236,24 +254,26 @@ export function NodeToolDialog() {
     options,
     addStoryboardSplitNode,
     addDerivedExportNode,
+    addEdge,
     closeDialog,
+    resolveResultNodeTitle,
     t,
   ]);
 
   const widthClassName = useMemo(() => {
     if (!activePlugin) {
-      return 'w-[460px]';
+      return 'w-[min(460px,calc(100vw-40px))]';
     }
     if (activePlugin.editor === 'crop') {
-      return 'w-[980px]';
+      return 'w-[min(980px,calc(100vw-40px))]';
     }
     if (activePlugin.editor === 'annotate') {
-      return 'w-[1120px]';
+      return 'w-[min(1120px,calc(100vw-40px))]';
     }
     if (activePlugin.editor === 'split') {
-      return 'w-[1120px]';
+      return 'w-[min(1120px,calc(100vw-40px))]';
     }
-    return 'w-[460px]';
+    return 'w-[min(460px,calc(100vw-40px))]';
   }, [activePlugin]);
 
   const editorContent = useMemo(() => {
@@ -323,7 +343,7 @@ export function NodeToolDialog() {
         </>
       }
     >
-      <div className="space-y-3">
+      <div className="space-y-3 max-h-[82vh] overflow-y-auto pr-1">
         {editorContent}
         {error && <div className="text-xs text-red-400">{error}</div>}
       </div>

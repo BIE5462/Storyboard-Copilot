@@ -49,9 +49,8 @@ export const annotateToolPlugin: CanvasToolPlugin = {
   supportsNode: (node) => supportsImageSourceNode(node) && Boolean(node.data.imageUrl),
   createInitialOptions: () => ({
     color: '#ff4d4f',
-    lineWidth: 4,
-    text: '标注文本',
-    fontSize: 28,
+    lineWidthPercent: 0.4,
+    fontSizePercent: 10,
     annotations: stringifyAnnotationItems([]),
   }),
   fields: [],

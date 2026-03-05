@@ -17,6 +17,7 @@ import {
 } from '@/commands/image';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import type {
   CanvasNode,
   StoryboardExportOptions,
@@ -236,6 +237,7 @@ interface FrameCardProps {
   index: number;
   frameAspectRatioCss: string;
   imageFit: StoryboardExportOptions['imageFit'];
+  viewerImageList: string[];
   draggedFrameId: string | null;
   dropTargetFrameId: string | null;
   onSortStart: (frameId: string) => void;
@@ -263,6 +265,7 @@ const FrameCard = memo(
     index,
     frameAspectRatioCss,
     imageFit,
+    viewerImageList,
     draggedFrameId,
     dropTargetFrameId,
     onSortStart,
@@ -280,6 +283,10 @@ const FrameCard = memo(
         : frame.previewImageUrl || frame.imageUrl;
       return picked ? resolveImageDisplayUrl(picked) : null;
     }, [frame.imageUrl, frame.previewImageUrl, zoom]);
+    const viewerSource = useMemo(() => {
+      const picked = frame.imageUrl || frame.previewImageUrl;
+      return picked ? resolveImageDisplayUrl(picked) : null;
+    }, [frame.imageUrl, frame.previewImageUrl]);
 
     const dragging = draggedFrameId === frame.id;
     const asDropTarget = dropTargetFrameId === frame.id && !dragging;
@@ -315,9 +322,11 @@ const FrameCard = memo(
           }}
         >
           {frame.imageUrl ? (
-            <img
+            <CanvasNodeImage
               src={imageSource ?? ''}
               alt={`Frame ${index + 1}`}
+              viewerSourceUrl={viewerSource}
+              viewerImageList={viewerImageList}
               className={`h-full w-full ${imageFit === 'contain' ? 'object-contain' : 'object-cover'}`}
               draggable={false}
             />
@@ -471,6 +480,20 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         label: `图${index + 1}`,
       })),
     [incomingImageRefs]
+  );
+  const frameViewerImageList = useMemo(
+    () =>
+      orderedFrames
+        .map((frame) => {
+          const source = frame.imageUrl || frame.previewImageUrl;
+          return source ? resolveImageDisplayUrl(source) : null;
+        })
+        .filter((item): item is string => Boolean(item)),
+    [orderedFrames]
+  );
+  const incomingImageViewerList = useMemo(
+    () => incomingImageItems.map((item) => resolveImageDisplayUrl(item.imageUrl)),
+    [incomingImageItems]
   );
 
   useEffect(() => {
@@ -879,6 +902,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
               index={index}
               frameAspectRatioCss={frameAspectRatioCss}
               imageFit={exportOptions.imageFit}
+              viewerImageList={frameViewerImageList}
               draggedFrameId={draggedFrameId}
               dropTargetFrameId={dropTargetFrameId}
               onSortStart={handleSortStart}
@@ -913,9 +937,11 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                     }}
                     title={item.label}
                   >
-                    <img
+                    <CanvasNodeImage
                       src={item.displayUrl}
                       alt={item.label}
+                      viewerSourceUrl={resolveImageDisplayUrl(item.imageUrl)}
+                      viewerImageList={incomingImageViewerList}
                       className="h-8 w-8 rounded object-cover"
                       draggable={false}
                     />

@@ -93,8 +93,14 @@ export function drawAnnotations(
       context.fillStyle = item.color;
       context.font = `600 ${item.fontSize}px sans-serif`;
       context.textBaseline = 'top';
-      context.fillText(item.text, item.x, item.y);
+      const lines = item.text.split('\n');
+      const lineHeight = Math.max(1, Math.round(item.fontSize * 1.2));
+      lines.forEach((line, index) => {
+        context.fillText(line, item.x, item.y + index * lineHeight);
+      });
       context.restore();
+      continue;
     }
+
   }
 }

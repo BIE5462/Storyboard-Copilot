@@ -51,6 +51,7 @@ import {
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
+import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { UiButton } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -252,6 +253,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         label: `图${index + 1}`,
       })),
     [incomingImages]
+  );
+  const incomingImageViewerList = useMemo(
+    () => incomingImageItems.map((item) => resolveImageDisplayUrl(item.imageUrl)),
+    [incomingImageItems]
   );
 
   const imageModels = useMemo(() => listImageModels(), []);
@@ -636,9 +641,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
                       : ''
                   }`}
                 >
-                  <img
+                  <CanvasNodeImage
                     src={item.displayUrl}
                     alt={item.label}
+                    viewerSourceUrl={resolveImageDisplayUrl(item.imageUrl)}
+                    viewerImageList={incomingImageViewerList}
                     className="h-8 w-8 rounded object-cover"
                     draggable={false}
                   />

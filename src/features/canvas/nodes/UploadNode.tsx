@@ -35,6 +35,7 @@ import {
   resolveImageDisplayUrl,
   shouldUseOriginalImageByZoom,
 } from '@/features/canvas/application/imageData';
+import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 
@@ -194,8 +195,9 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
         <div
           className="block h-full w-full overflow-hidden rounded-[var(--node-radius)] bg-bg-dark"
         >
-          <img
+          <CanvasNodeImage
             src={imageSource ?? ''}
+            viewerSourceUrl={data.imageUrl ? resolveImageDisplayUrl(data.imageUrl) : null}
             alt={t('node.upload.uploadedAlt')}
             className="h-full w-full object-contain"
           />

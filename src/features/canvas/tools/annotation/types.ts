@@ -1,4 +1,4 @@
-export type AnnotationToolType = 'select' | 'rect' | 'ellipse' | 'arrow' | 'pen' | 'text';
+export type AnnotationToolType = 'rect' | 'ellipse' | 'arrow' | 'pen' | 'text';
 
 export interface AnnotationStyle {
   stroke: string;

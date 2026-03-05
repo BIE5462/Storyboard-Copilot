@@ -11,6 +11,10 @@ import { resolveImageDisplayUrl } from '@/features/canvas/application/imageData'
 import type { ToolSelectField } from '@/features/canvas/tools';
 import type { VisualToolEditorProps } from './types';
 
+const VIEWPORT_PADDING_PX = 20;
+const VIEWPORT_MIN_WIDTH_PX = 220;
+const VIEWPORT_MIN_HEIGHT_PX = 180;
+
 function parsePresetRatio(value: string): number | null {
   if (!value.includes(':')) {
     return null;
@@ -108,14 +112,60 @@ function buildDefaultCrop(width: number, height: number, aspect: number | undefi
 
 export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChange }: VisualToolEditorProps) {
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const previousAspectKeyRef = useRef<string | null>(null);
   const [crop, setCrop] = useState<Crop>();
   const [customRatioInput, setCustomRatioInput] = useState(
     typeof options.customAspectRatio === 'string' ? options.customAspectRatio : ''
   );
+  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+
   const displaySourceImageUrl = useMemo(
     () => resolveImageDisplayUrl(sourceImageUrl),
     [sourceImageUrl]
   );
+
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (!element) {
+      return;
+    }
+
+    const updateViewportSize = () => {
+      const rect = element.getBoundingClientRect();
+      setViewportSize({
+        width: Math.max(0, Math.round(rect.width)),
+        height: Math.max(0, Math.round(rect.height)),
+      });
+    };
+
+    updateViewportSize();
+    const observer = new ResizeObserver(updateViewportSize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const renderedImageSize = useMemo(() => {
+    if (naturalSize.width <= 0 || naturalSize.height <= 0) {
+      return null;
+    }
+
+    const maxWidth = Math.max(
+      VIEWPORT_MIN_WIDTH_PX,
+      viewportSize.width - VIEWPORT_PADDING_PX * 2
+    );
+    const maxHeight = Math.max(
+      VIEWPORT_MIN_HEIGHT_PX,
+      viewportSize.height - VIEWPORT_PADDING_PX * 2
+    );
+    const ratio = Math.min(maxWidth / naturalSize.width, maxHeight / naturalSize.height, 1);
+
+    return {
+      width: Math.max(1, Math.round(naturalSize.width * ratio)),
+      height: Math.max(1, Math.round(naturalSize.height * ratio)),
+    };
+  }, [naturalSize.height, naturalSize.width, viewportSize.height, viewportSize.width]);
 
   const ratioOptions = useMemo(() => {
     const field = plugin.fields.find((item) => item.type === 'select' && item.key === 'aspectRatio');
@@ -127,6 +177,13 @@ export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChang
         { label: '9:16', value: '9:16' },
         { label: '4:3', value: '4:3' },
         { label: '3:4', value: '3:4' },
+        { label: '3:2', value: '3:2' },
+        { label: '2:3', value: '2:3' },
+        { label: '4:5', value: '4:5' },
+        { label: '5:4', value: '5:4' },
+        { label: '2:1', value: '2:1' },
+        { label: '21:9', value: '21:9' },
+        { label: '原图', value: 'original' },
       ];
     }
 
@@ -139,12 +196,19 @@ export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChang
       return undefined;
     }
 
+    if (aspectMode === 'original') {
+      if (naturalSize.width <= 0 || naturalSize.height <= 0) {
+        return undefined;
+      }
+      return naturalSize.width / naturalSize.height;
+    }
+
     if (aspectMode === 'custom') {
       return parseCustomRatio(customRatioInput) ?? undefined;
     }
 
     return parsePresetRatio(aspectMode) ?? undefined;
-  }, [aspectMode, customRatioInput]);
+  }, [aspectMode, customRatioInput, naturalSize.height, naturalSize.width]);
 
   const customRatioError = useMemo(() => {
     if (aspectMode !== 'custom') {
@@ -163,48 +227,106 @@ export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChang
     setCustomRatioInput(typeof options.customAspectRatio === 'string' ? options.customAspectRatio : '');
   }, [options.customAspectRatio]);
 
-  const syncCropToOptions = useCallback(
-    (pixelCrop: PixelCrop) => {
-      const image = imageRef.current;
-      if (!image || image.width <= 0 || image.height <= 0) {
-        return;
-      }
-
-      const imageCrop = toImageSpaceCrop(
-        pixelCrop,
-        image.width,
-        image.height,
-        image.naturalWidth,
-        image.naturalHeight
-      );
-
-      onOptionsChange({
-        ...options,
-        aspectRatio: aspectMode,
-        customAspectRatio: customRatioInput,
-        ...imageCrop,
-      });
-    },
-    [aspectMode, customRatioInput, onOptionsChange, options]
-  );
-
-  const resetCropByMode = useCallback(() => {
-    const image = imageRef.current;
-    if (!image || image.width <= 0 || image.height <= 0) {
+  const syncCropToOptions = useCallback((pixelCrop: PixelCrop) => {
+    if (!renderedImageSize || naturalSize.width <= 0 || naturalSize.height <= 0) {
       return;
     }
 
-    const next = buildDefaultCrop(image.width, image.height, resolvedAspect);
-    setCrop(next);
+    const imageCrop = toImageSpaceCrop(
+      pixelCrop,
+      renderedImageSize.width,
+      renderedImageSize.height,
+      naturalSize.width,
+      naturalSize.height
+    );
 
+    onOptionsChange({
+      ...options,
+      aspectRatio: aspectMode,
+      customAspectRatio: customRatioInput,
+      ...imageCrop,
+    });
+  }, [
+    aspectMode,
+    customRatioInput,
+    naturalSize.height,
+    naturalSize.width,
+    onOptionsChange,
+    options,
+    renderedImageSize,
+  ]);
+
+  const applyCropFromOptions = useCallback((): boolean => {
+    if (!renderedImageSize || naturalSize.width <= 0 || naturalSize.height <= 0) {
+      return false;
+    }
+
+    const cropX = toNumber(options.cropX);
+    const cropY = toNumber(options.cropY);
+    const cropWidth = toNumber(options.cropWidth);
+    const cropHeight = toNumber(options.cropHeight);
+    if (
+      cropX === null ||
+      cropY === null ||
+      cropWidth === null ||
+      cropHeight === null ||
+      cropWidth <= 0 ||
+      cropHeight <= 0
+    ) {
+      return false;
+    }
+
+    setCrop(
+      toRenderedCrop(
+        cropX,
+        cropY,
+        cropWidth,
+        cropHeight,
+        renderedImageSize.width,
+        renderedImageSize.height,
+        naturalSize.width,
+        naturalSize.height
+      )
+    );
+    return true;
+  }, [naturalSize.height, naturalSize.width, options.cropHeight, options.cropWidth, options.cropX, options.cropY, renderedImageSize]);
+
+  useEffect(() => {
+    if (!renderedImageSize) {
+      return;
+    }
+
+    const aspectKey = `${aspectMode}:${aspectMode === 'custom' ? customRatioInput : ''}`;
+    const aspectModeChanged =
+      previousAspectKeyRef.current !== null
+      && previousAspectKeyRef.current !== aspectKey;
+    previousAspectKeyRef.current = aspectKey;
+
+    if (!aspectModeChanged && applyCropFromOptions()) {
+      return;
+    }
+
+    const next = buildDefaultCrop(
+      renderedImageSize.width,
+      renderedImageSize.height,
+      resolvedAspect
+    );
+    setCrop(next);
     syncCropToOptions({
       unit: 'px',
       x: Math.round(next.x ?? 0),
       y: Math.round(next.y ?? 0),
-      width: Math.round(next.width ?? image.width),
-      height: Math.round(next.height ?? image.height),
+      width: Math.round(next.width ?? renderedImageSize.width),
+      height: Math.round(next.height ?? renderedImageSize.height),
     });
-  }, [resolvedAspect, syncCropToOptions]);
+  }, [
+    applyCropFromOptions,
+    aspectMode,
+    customRatioInput,
+    renderedImageSize,
+    resolvedAspect,
+    syncCropToOptions,
+  ]);
 
   const handleImageLoad = useCallback(() => {
     const image = imageRef.current;
@@ -212,43 +334,11 @@ export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChang
       return;
     }
 
-    const cropX = toNumber(options.cropX);
-    const cropY = toNumber(options.cropY);
-    const cropWidth = toNumber(options.cropWidth);
-    const cropHeight = toNumber(options.cropHeight);
-
-    if (
-      cropX !== null &&
-      cropY !== null &&
-      cropWidth !== null &&
-      cropHeight !== null &&
-      cropWidth > 0 &&
-      cropHeight > 0
-    ) {
-      setCrop(
-        toRenderedCrop(
-          cropX,
-          cropY,
-          cropWidth,
-          cropHeight,
-          image.width,
-          image.height,
-          image.naturalWidth,
-          image.naturalHeight
-        )
-      );
-      return;
-    }
-
-    resetCropByMode();
-  }, [options.cropHeight, options.cropWidth, options.cropX, options.cropY, resetCropByMode]);
-
-  useEffect(() => {
-    if (!imageRef.current) {
-      return;
-    }
-    resetCropByMode();
-  }, [resolvedAspect, resetCropByMode]);
+    setNaturalSize({
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+    });
+  }, []);
 
   return (
     <div className="space-y-3">
@@ -315,25 +405,47 @@ export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChang
         </div>
       )}
 
-      <div className="ui-scrollbar max-h-[520px] overflow-auto rounded-xl border border-[rgba(255,255,255,0.12)] bg-bg-dark p-3">
-        <ReactCrop
-          crop={crop}
-          onChange={(nextCrop) => setCrop(nextCrop)}
-          onComplete={(pixelCrop) => syncCropToOptions(pixelCrop)}
-          aspect={resolvedAspect}
-          minWidth={24}
-          minHeight={24}
-          keepSelection
-          ruleOfThirds
-        >
-          <img
-            ref={imageRef}
-            src={displaySourceImageUrl}
-            alt="Crop Source"
-            className="max-h-[480px] w-auto max-w-full object-contain"
-            onLoad={handleImageLoad}
-          />
-        </ReactCrop>
+      <div
+        ref={viewportRef}
+        className="relative h-[min(62vh,640px)] rounded-xl border border-[rgba(255,255,255,0.12)] bg-bg-dark/85"
+      >
+        <div className="flex h-full w-full items-center justify-center p-3">
+          {renderedImageSize && (
+            <ReactCrop
+              crop={crop}
+              onChange={(nextCrop) => setCrop(nextCrop)}
+              onComplete={(pixelCrop) => syncCropToOptions(pixelCrop)}
+              aspect={resolvedAspect}
+              minWidth={24}
+              minHeight={24}
+              keepSelection
+              ruleOfThirds
+            >
+              <img
+                ref={imageRef}
+                src={displaySourceImageUrl}
+                alt="Crop Source"
+                className="block select-none object-contain"
+                style={{
+                  width: `${renderedImageSize.width}px`,
+                  height: `${renderedImageSize.height}px`,
+                  maxWidth: 'none',
+                  maxHeight: 'none',
+                }}
+                onLoad={handleImageLoad}
+              />
+            </ReactCrop>
+          )}
+          {!renderedImageSize && (
+            <img
+              ref={imageRef}
+              src={displaySourceImageUrl}
+              alt="Crop Source"
+              className="hidden"
+              onLoad={handleImageLoad}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

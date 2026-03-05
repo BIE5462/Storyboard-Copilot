@@ -50,7 +50,9 @@
     "noProcessableImage": "No processable image for current node",
     "processFailed": "Processing failed",
     "processing": "Processing...",
-    "apply": "Apply"
+    "apply": "Apply",
+    "cropResultTitle": "Crop Result",
+    "annotateResultTitle": "Annotation Result"
   },
   "nodeToolbar": {
     "reupload": "Reupload",
@@ -110,6 +112,12 @@
       "placeholder": "Write Markdown text. It will render when unselected.",
       "empty": "Empty note"
     }
+  },
+  "viewer": {
+    "imageAlt": "Image",
+    "prev": "Previous",
+    "next": "Next",
+    "reset": "Reset View"
   },
   "split": {
     "title": "Split Storyboard",

@@ -73,6 +73,12 @@ interface CanvasState {
   dragHistorySnapshot: CanvasHistorySnapshot | null;
   currentViewport: Viewport;
   canvasViewportSize: { width: number; height: number };
+  imageViewer: {
+    isOpen: boolean;
+    currentImageUrl: string | null;
+    imageList: string[];
+    currentIndex: number;
+  };
 
   onNodesChange: (changes: NodeChange<CanvasNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<CanvasEdge>[]) => void;
@@ -100,6 +106,9 @@ interface CanvasState {
     options?: {
       defaultTitle?: string;
       resultKind?: ExportImageNodeResultKind;
+      aspectRatioStrategy?: 'provided' | 'derivedFromSource';
+      sizeStrategy?: 'generated' | 'autoMinEdge' | 'matchSource';
+      matchSourceNodeSize?: boolean;
     }
   ) => string | null;
   addStoryboardSplitNode: (
@@ -134,6 +143,9 @@ interface CanvasState {
   closeToolDialog: () => void;
   setViewportState: (viewport: Viewport) => void;
   setCanvasViewportSize: (size: { width: number; height: number }) => void;
+  openImageViewer: (imageUrl: string, imageList?: string[]) => void;
+  closeImageViewer: () => void;
+  navigateImageViewer: (direction: 'prev' | 'next') => void;
 
   undo: () => boolean;
   redo: () => boolean;
@@ -533,6 +545,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   dragHistorySnapshot: null,
   currentViewport: { x: 0, y: 0, zoom: 1 },
   canvasViewportSize: { width: 0, height: 0 },
+  imageViewer: {
+    isOpen: false,
+    currentImageUrl: null,
+    imageList: [],
+    currentIndex: 0,
+  },
 
   onNodesChange: (changes) => {
     set((state) => {
@@ -673,6 +691,54 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   setCanvasViewportSize: (size) => {
     set({ canvasViewportSize: size });
+  },
+
+  openImageViewer: (imageUrl, imageList = []) => {
+    const list = imageList.length > 0 ? imageList : [imageUrl];
+    const index = list.indexOf(imageUrl);
+    set({
+      imageViewer: {
+        isOpen: true,
+        currentImageUrl: imageUrl,
+        imageList: list,
+        currentIndex: index >= 0 ? index : 0,
+      },
+    });
+  },
+
+  closeImageViewer: () => {
+    set({
+      imageViewer: {
+        isOpen: false,
+        currentImageUrl: null,
+        imageList: [],
+        currentIndex: 0,
+      },
+    });
+  },
+
+  navigateImageViewer: (direction) => {
+    const state = get();
+    const { currentIndex, imageList } = state.imageViewer;
+    if (direction === 'prev' && currentIndex > 0) {
+      const newIndex = currentIndex - 1;
+      set({
+        imageViewer: {
+          ...state.imageViewer,
+          currentIndex: newIndex,
+          currentImageUrl: imageList[newIndex],
+        },
+      });
+    } else if (direction === 'next' && currentIndex < imageList.length - 1) {
+      const newIndex = currentIndex + 1;
+      set({
+        imageViewer: {
+          ...state.imageViewer,
+          currentIndex: newIndex,
+          currentImageUrl: imageList[newIndex],
+        },
+      });
+    }
   },
 
   addNode: (type, position, data = {}) => {
@@ -903,11 +969,30 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   addDerivedExportNode: (sourceNodeId, imageUrl, aspectRatio, previewImageUrl, options) => {
     const state = get();
     const sourceNode = state.nodes.find((node) => node.id === sourceNodeId);
-    const resolvedAspectRatio = resolveDerivedAspectRatio(sourceNode, aspectRatio);
-    const derivedSize = resolveGeneratedImageNodeDimensions(resolvedAspectRatio, {
+    const aspectRatioStrategy = options?.aspectRatioStrategy ?? 'provided';
+    const resolvedAspectRatio = aspectRatioStrategy === 'derivedFromSource'
+      ? resolveDerivedAspectRatio(sourceNode, aspectRatio)
+      : (aspectRatio || resolveDerivedAspectRatio(sourceNode, DEFAULT_ASPECT_RATIO));
+    const autoSize = resolveAutoImageNodeDimensions(resolvedAspectRatio, {
       minWidth: EXPORT_RESULT_NODE_MIN_WIDTH,
       minHeight: EXPORT_RESULT_NODE_MIN_HEIGHT,
     });
+    const generatedSize = resolveGeneratedImageNodeDimensions(resolvedAspectRatio, {
+      minWidth: EXPORT_RESULT_NODE_MIN_WIDTH,
+      minHeight: EXPORT_RESULT_NODE_MIN_HEIGHT,
+    });
+    const sourceSize = sourceNode ? getNodeSize(sourceNode) : null;
+    const sizeStrategy = options?.sizeStrategy
+      ?? (options?.matchSourceNodeSize ? 'matchSource' : 'generated');
+    let derivedSize = generatedSize;
+    if (sizeStrategy === 'autoMinEdge') {
+      derivedSize = autoSize;
+    } else if (sizeStrategy === 'matchSource' && sourceSize) {
+      derivedSize = {
+        width: Math.max(1, Math.round(sourceSize.width)),
+        height: Math.max(1, Math.round(sourceSize.height)),
+      };
+    }
     const position = state.findNodePosition(
       sourceNodeId,
       derivedSize.width,

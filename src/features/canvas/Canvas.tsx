@@ -44,6 +44,7 @@ import { edgeTypes } from './edges';
 import { NodeSelectionMenu } from './NodeSelectionMenu';
 import { SelectedNodeOverlay } from './ui/SelectedNodeOverlay';
 import { NodeToolDialog } from './ui/NodeToolDialog';
+import { ImageViewerModal } from './ui/ImageViewerModal';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 
@@ -264,6 +265,9 @@ export function Canvas() {
   const closeToolDialog = useCanvasStore((state) => state.closeToolDialog);
   const setViewportState = useCanvasStore((state) => state.setViewportState);
   const setCanvasViewportSize = useCanvasStore((state) => state.setCanvasViewportSize);
+  const imageViewer = useCanvasStore((state) => state.imageViewer);
+  const closeImageViewer = useCanvasStore((state) => state.closeImageViewer);
+  const navigateImageViewer = useCanvasStore((state) => state.navigateImageViewer);
 
   const getCurrentProject = useProjectStore((state) => state.getCurrentProject);
   const saveCurrentProject = useProjectStore((state) => state.saveCurrentProject);
@@ -1324,6 +1328,15 @@ export function Canvas() {
       )}
 
       <NodeToolDialog />
+
+      <ImageViewerModal
+        open={imageViewer.isOpen}
+        imageUrl={imageViewer.currentImageUrl || ''}
+        imageList={imageViewer.imageList}
+        currentIndex={imageViewer.currentIndex}
+        onClose={closeImageViewer}
+        onNavigate={navigateImageViewer}
+      />
     </div>
   );
 }

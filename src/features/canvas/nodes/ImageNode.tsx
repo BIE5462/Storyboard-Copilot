@@ -23,6 +23,7 @@ import {
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { useCanvasStore } from '@/stores/canvasStore';
 
 type ImageNodeProps = NodeProps & {
@@ -102,6 +103,12 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
     return picked ? resolveImageDisplayUrl(picked) : null;
   }, [data.imageUrl, data.previewImageUrl, zoom]);
 
+  // 获取原图 URL 用于查看器
+  const originalImageUrl = useMemo(() => {
+    if (!data.imageUrl) return null;
+    return resolveImageDisplayUrl(data.imageUrl);
+  }, [data.imageUrl]);
+
   return (
     <div
       className={`
@@ -128,9 +135,10 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
         className="relative h-full w-full overflow-hidden rounded-[var(--node-radius)] bg-bg-dark"
       >
         {data.imageUrl ? (
-          <img
+          <CanvasNodeImage
             src={imageSource ?? ''}
             alt={isExportResultNode ? t('node.imageNode.resultAlt') : t('node.imageNode.generatedAlt')}
+            viewerSourceUrl={originalImageUrl}
             className="h-full w-full object-contain"
           />
         ) : (

@@ -45,6 +45,7 @@ import {
   listImageModels,
 } from '@/features/canvas/models';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
+import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import {
   UiButton,
 } from '@/components/ui';
@@ -492,6 +493,10 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         label: `图${index + 1}`,
       })),
     [incomingImages]
+  );
+  const incomingImageViewerList = useMemo(
+    () => incomingImageItems.map((item) => resolveImageDisplayUrl(item.imageUrl)),
+    [incomingImageItems]
   );
 
   const imageModels = useMemo(() => listImageModels(), []);
@@ -1217,9 +1222,11 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
                     : ''
                   }`}
               >
-                <img
+                <CanvasNodeImage
                   src={item.displayUrl}
                   alt={item.label}
+                  viewerSourceUrl={resolveImageDisplayUrl(item.imageUrl)}
+                  viewerImageList={incomingImageViewerList}
                   className="h-8 w-8 rounded object-cover"
                 />
                 <span>{item.label}</span>
