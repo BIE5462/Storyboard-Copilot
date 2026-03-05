@@ -56,6 +56,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Normalize product name for CI bundle
+        shell: pwsh
+        run: |
+          $configPath = "src-tauri/tauri.conf.json"
+          $config = Get-Content $configPath -Raw | ConvertFrom-Json
+          $config.productName = "Storyboard-Copilot"
+          $config | ConvertTo-Json -Depth 100 | Set-Content -Path $configPath -Encoding utf8
+
       - name: Build application
         run: npx tauri build
 
@@ -132,6 +140,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Normalize product name for CI bundle
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.productName='Storyboard-Copilot';fs.writeFileSync(p, JSON.stringify(j, null, 2));"
 
       - name: Build application (Universal Binary)
         env:
