@@ -5,13 +5,38 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>分镜助手 Storyboard-Copilot</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      html, body, #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        background: #0f0f0f;
+      }
+
+      #boot-screen {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at 30% 20%, #1f2329 0%, #131518 48%, #0c0e11 100%);
+        color: #e5e7eb;
+        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+        letter-spacing: 0.02em;
+        z-index: 2147483647;
+        transition: opacity 180ms ease;
+      }
+
+      #boot-screen.boot-screen--hide {
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
   </head>
 
   <body>
     <div id="root"></div>
+    <div id="boot-screen">Storyboard Copilot</div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

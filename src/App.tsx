@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
+import { invoke } from '@tauri-apps/api/core';
 import { Canvas } from './features/canvas/Canvas';
 import { TitleBar } from './components/TitleBar';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -30,6 +31,7 @@ function App() {
   const hydrate = useProjectStore((state) => state.hydrate);
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
   const closeProject = useProjectStore((state) => state.closeProject);
+  const hasNotifiedFrontendReady = useRef(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -63,6 +65,40 @@ function App() {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    const bootScreen = document.getElementById('boot-screen');
+    if (bootScreen) {
+      bootScreen.classList.add('boot-screen--hide');
+      window.setTimeout(() => {
+        bootScreen.remove();
+      }, 220);
+    }
+
+    if (hasNotifiedFrontendReady.current) {
+      return;
+    }
+
+    hasNotifiedFrontendReady.current = true;
+
+    const notifyFrontendReady = async () => {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+
+      try {
+        await invoke('frontend_ready');
+      } catch (error) {
+        console.warn('failed to notify frontend readiness', error);
+      }
+    };
+
+    void notifyFrontendReady();
+  }, [isHydrated]);
 
   if (!isHydrated) {
     return (

@@ -2,12 +2,18 @@ pub mod ai;
 pub mod commands;
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use commands::ai as ai_commands;
 use commands::image;
 use commands::project_state;
+use tauri::Manager;
 use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+const SPLASH_WINDOW_LABEL: &str = "splash";
+const MAIN_WINDOW_LABEL: &str = "main";
+const FRONTEND_READY_TIMEOUT_MS: u64 = 12_000;
 
 fn resolve_log_dir() -> Option<PathBuf> {
     let mut candidates = Vec::new();
@@ -55,6 +61,30 @@ fn setup_logging() {
     info!("Storyboard Copilot starting...");
 }
 
+fn show_main_and_close_splash(app: &tauri::AppHandle) {
+    if let Some(main_window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if let Err(err) = main_window.show() {
+            warn!("failed to show main window: {err}");
+        }
+        if let Err(err) = main_window.set_focus() {
+            warn!("failed to focus main window: {err}");
+        }
+    } else {
+        warn!("main window not found while trying to reveal UI");
+    }
+
+    if let Some(splash_window) = app.get_webview_window(SPLASH_WINDOW_LABEL) {
+        if let Err(err) = splash_window.close() {
+            warn!("failed to close splash window: {err}");
+        }
+    }
+}
+
+#[tauri::command]
+fn frontend_ready(app: tauri::AppHandle) {
+    show_main_and_close_splash(&app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     setup_logging();
@@ -66,13 +96,18 @@ pub fn run() {
                 .app
                 .windows
                 .iter()
-                .find(|window| window.label == "main")
+                .find(|window| window.label == MAIN_WINDOW_LABEL)
                 .cloned()
                 .ok_or_else(|| "missing main window config".to_string())?;
 
             #[cfg(not(target_os = "macos"))]
+            let main_window = tauri::WebviewWindowBuilder::from_config(app, &window_config)?.build()?;
+
+            #[cfg(not(target_os = "macos"))]
             {
-                tauri::WebviewWindowBuilder::from_config(app, &window_config)?.build()?;
+                if let Err(err) = main_window.hide() {
+                    warn!("failed to hide main window on startup: {err}");
+                }
             }
 
             #[cfg(target_os = "macos")]
@@ -82,6 +117,10 @@ pub fn run() {
                 mac_window_config.transparent = true;
 
                 let window = tauri::WebviewWindowBuilder::from_config(app, &mac_window_config)?.build()?;
+
+                if let Err(err) = window.hide() {
+                    warn!("failed to hide main window on startup: {err}");
+                }
 
                 if let Err(err) = window.set_effects(Some(
                     tauri::window::EffectsBuilder::new()
@@ -93,11 +132,44 @@ pub fn run() {
                 }
             }
 
+            tauri::WebviewWindowBuilder::new(
+                app,
+                SPLASH_WINDOW_LABEL,
+                tauri::WebviewUrl::App("splash.html".into()),
+            )
+            .title("Storyboard Copilot")
+            .inner_size(420.0, 270.0)
+            .resizable(false)
+            .decorations(false)
+            .center()
+            .always_on_top(true)
+            .visible(true)
+            .build()?;
+
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(FRONTEND_READY_TIMEOUT_MS)).await;
+
+                let is_splash_visible = app_handle
+                    .get_webview_window(SPLASH_WINDOW_LABEL)
+                    .and_then(|window| window.is_visible().ok())
+                    .unwrap_or(false);
+
+                if is_splash_visible {
+                    warn!(
+                        "frontend_ready timeout after {}ms, forcing main window reveal",
+                        FRONTEND_READY_TIMEOUT_MS
+                    );
+                    show_main_and_close_splash(&app_handle);
+                }
+            });
+
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            frontend_ready,
             image::split_image,
             image::split_image_source,
             image::prepare_node_image_source,
