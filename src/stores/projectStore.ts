@@ -712,6 +712,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   openProject: (id) => {
     const reqSeq = ++openProjectRequestSeq;
+    useCanvasStore.getState().closeImageViewer();
     set({ isOpeningProject: true });
 
     void (async () => {
@@ -750,6 +751,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   closeProject: () => {
     openProjectRequestSeq += 1;
+    useCanvasStore.getState().closeImageViewer();
     const { currentProjectId, currentProject } = get();
     let persistedSummary: ProjectSummary | null = null;
 

@@ -26,6 +26,7 @@ export function ImageViewerModal({
     'inline-flex h-10 items-center justify-center rounded-full border border-white/20 bg-black/60 px-4 text-sm text-white backdrop-blur-xl';
   const [isVisible, setIsVisible] = useState(false);
   const [overlayOpacity, setOverlayOpacity] = useState(0);
+  const [displayImageUrl, setDisplayImageUrl] = useState(imageUrl);
   const closeTimerRef = useRef<number | null>(null);
 
   const {
@@ -52,6 +53,7 @@ export function ImageViewerModal({
 
   useEffect(() => {
     if (open) {
+      setDisplayImageUrl(imageUrl);
       setIsVisible(true);
       if (closeTimerRef.current) {
         clearTimeout(closeTimerRef.current);
@@ -67,6 +69,7 @@ export function ImageViewerModal({
     setOverlayOpacity(0);
     closeTimerRef.current = window.setTimeout(() => {
       setIsVisible(false);
+      setDisplayImageUrl('');
     }, 400);
     return () => {
       if (closeTimerRef.current) {
@@ -75,6 +78,13 @@ export function ImageViewerModal({
       }
     };
   }, [open, isVisible]);
+
+  useEffect(() => {
+    if (!open || !imageUrl) {
+      return;
+    }
+    setDisplayImageUrl(imageUrl);
+  }, [open, imageUrl]);
 
   useEffect(() => {
     return () => {
@@ -130,7 +140,7 @@ export function ImageViewerModal({
         <div className="relative">
           <img
             ref={imageRef}
-            src={imageUrl}
+            src={displayImageUrl}
             alt={t('viewer.imageAlt', '图片')}
             className="select-none transition-opacity duration-300"
             style={{

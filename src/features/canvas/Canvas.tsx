@@ -376,9 +376,17 @@ export function Canvas() {
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
       }
+      closeImageViewer();
       persistCanvasSnapshot();
     };
-  }, [getCurrentProject, persistCanvasSnapshot, reactFlowInstance, setCanvasData, setViewportState]);
+  }, [
+    closeImageViewer,
+    getCurrentProject,
+    persistCanvasSnapshot,
+    reactFlowInstance,
+    setCanvasData,
+    setViewportState,
+  ]);
 
   useEffect(() => {
     if (isRestoringCanvasRef.current || dragHistorySnapshot) {
