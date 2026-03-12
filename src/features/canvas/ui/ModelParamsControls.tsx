@@ -25,6 +25,7 @@ import { openSettingsDialog } from '@/features/settings/settingsEvents';
 interface ModelParamsControlsProps {
   imageModels: ImageModelDefinition[];
   selectedModel: ImageModelDefinition;
+  resolutionOptions: ResolutionOption[];
   selectedResolution: ResolutionOption;
   selectedAspectRatio: AspectRatioOption;
   aspectRatioOptions: AspectRatioOption[];
@@ -138,6 +139,7 @@ function resolveExtraParamValue(
 export const ModelParamsControls = memo(({
   imageModels,
   selectedModel,
+  resolutionOptions,
   selectedResolution,
   selectedAspectRatio,
   aspectRatioOptions,
@@ -548,7 +550,7 @@ export const ModelParamsControls = memo(({
             <div>
               <div className="mb-2 text-xs text-text-muted">{t('modelParams.quality')}</div>
               <div className="grid grid-cols-4 gap-1 rounded-xl border border-[rgba(255,255,255,0.1)] bg-bg-dark/65 p-1">
-                {selectedModel.resolutions.map((item) => {
+                {resolutionOptions.map((item) => {
                   const active = item.value === selectedResolution.value;
                   return (
                     <button

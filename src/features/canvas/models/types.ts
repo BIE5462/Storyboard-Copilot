@@ -18,6 +18,10 @@ export interface ResolutionOption {
   label: string;
 }
 
+export interface ImageModelRuntimeContext {
+  extraParams?: Record<string, unknown>;
+}
+
 export type ExtraParamType = 'boolean' | 'enum' | 'number' | 'string';
 
 export interface ExtraParamDefinition {
@@ -46,6 +50,7 @@ export interface ImageModelDefinition {
   defaultResolution: string;
   aspectRatios: AspectRatioOption[];
   resolutions: ResolutionOption[];
+  resolveResolutions?: (context: ImageModelRuntimeContext) => ResolutionOption[];
   extraParamsSchema?: ExtraParamDefinition[];
   defaultExtraParams?: Record<string, unknown>;
   pricing?: ModelPricingDefinition;

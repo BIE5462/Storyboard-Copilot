@@ -57,6 +57,8 @@ import {
   DEFAULT_IMAGE_MODEL_ID,
   getImageModel,
   listImageModels,
+  resolveImageModelResolution,
+  resolveImageModelResolutions,
 } from '@/features/canvas/models';
 import { GRSAI_NANO_BANANA_PRO_MODEL_ID } from '@/features/canvas/models/image/grsai/nanoBananaPro';
 import { FAL_NANO_BANANA_2_MODEL_ID } from '@/features/canvas/models/image/fal/nanoBanana2';
@@ -620,12 +622,25 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     return getImageModel(modelId);
   }, [nodeData.model]);
   const providerApiKey = apiKeys[selectedModel.providerId] ?? '';
+  const effectiveExtraParams = useMemo(
+    () => ({
+      ...(nodeData.extraParams ?? {}),
+      ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
+        ? { grsai_pro_model: grsaiNanoBananaProModel }
+        : {}),
+    }),
+    [grsaiNanoBananaProModel, nodeData.extraParams, selectedModel.id]
+  );
+  const resolutionOptions = useMemo(
+    () => resolveImageModelResolutions(selectedModel, { extraParams: effectiveExtraParams }),
+    [effectiveExtraParams, selectedModel]
+  );
 
   const selectedResolution = useMemo((): AspectRatioChoice => {
-    const nodeSize = nodeData.size;
-    const found = nodeSize ? selectedModel.resolutions.find((item) => item.value === nodeSize) : undefined;
-    return found ?? selectedModel.resolutions.find((item) => item.value === selectedModel.defaultResolution) ?? selectedModel.resolutions[0];
-  }, [nodeData.size, selectedModel]);
+    return resolveImageModelResolution(selectedModel, nodeData.size, {
+      extraParams: effectiveExtraParams,
+    });
+  }, [effectiveExtraParams, nodeData.size, selectedModel]);
 
   const aspectRatioOptions = useMemo<AspectRatioChoice[]>(
     () => [AUTO_ASPECT_RATIO_OPTION, ...selectedModel.aspectRatios],
@@ -710,21 +725,12 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     selectedModel.id === FAL_NANO_BANANA_2_MODEL_ID ||
     selectedModel.id === KIE_NANO_BANANA_2_MODEL_ID;
   const webSearchEnabled = Boolean(nodeData.extraParams?.enable_web_search);
-  const pricingExtraParams = useMemo(
-    () => ({
-      ...(nodeData.extraParams ?? {}),
-      ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-        ? { grsai_pro_model: grsaiNanoBananaProModel }
-        : {}),
-    }),
-    [grsaiNanoBananaProModel, nodeData.extraParams, selectedModel.id]
-  );
   const resolvedPriceDisplay = useMemo(
     () =>
       showNodePrice
         ? resolveModelPriceDisplay(selectedModel, {
           resolution: selectedResolution.value,
-          extraParams: pricingExtraParams,
+          extraParams: effectiveExtraParams,
           language: i18n.language,
           settings: {
             displayCurrencyMode: priceDisplayCurrencyMode,
@@ -739,7 +745,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       i18n.language,
       preferDiscountedPrice,
       priceDisplayCurrencyMode,
-      pricingExtraParams,
+      effectiveExtraParams,
       selectedModel,
       selectedResolution.value,
       showNodePrice,
@@ -1119,12 +1125,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         size: selectedResolution.value,
         aspectRatio: resolvedRequestAspectRatio,
         referenceImages: allReferenceImages,
-        extraParams: {
-          ...(nodeData.extraParams ?? {}),
-          ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-            ? { grsai_pro_model: grsaiNanoBananaProModel }
-            : {}),
-        },
+        extraParams: effectiveExtraParams,
       });
       const generationDebugContext: GenerationDebugContext = {
         sourceType: 'storyboardGen',
@@ -1133,12 +1134,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         requestSize: selectedResolution.value,
         requestAspectRatio: resolvedRequestAspectRatio,
         prompt,
-        extraParams: {
-          ...(nodeData.extraParams ?? {}),
-          ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-            ? { grsai_pro_model: grsaiNanoBananaProModel }
-            : {}),
-        },
+        extraParams: effectiveExtraParams,
         referenceImageCount: allReferenceImages.length,
         referenceImagePlaceholders: createReferenceImagePlaceholders(allReferenceImages.length),
         appVersion: runtimeDiagnostics.appVersion,
@@ -1168,12 +1164,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         requestSize: selectedResolution.value,
         requestAspectRatio: resolvedRequestAspectRatio,
         prompt,
-        extraParams: {
-          ...(nodeData.extraParams ?? {}),
-          ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-            ? { grsai_pro_model: grsaiNanoBananaProModel }
-            : {}),
-        },
+        extraParams: effectiveExtraParams,
         referenceImageCount: incomingImages.length + 1,
         referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length + 1),
         appVersion: runtimeDiagnostics.appVersion,
@@ -1207,8 +1198,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     nodeData,
     incomingImages,
     requestResolution.requestModel,
-    nodeData.extraParams,
-    grsaiNanoBananaProModel,
+    effectiveExtraParams,
     selectedModel.expectedDurationMs,
     selectedModel.id,
     selectedModel.providerId,
@@ -1628,6 +1618,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         <ModelParamsControls
           imageModels={imageModels}
           selectedModel={selectedModel}
+          resolutionOptions={resolutionOptions}
           selectedResolution={selectedResolution}
           selectedAspectRatio={selectedAspectRatio}
           aspectRatioOptions={aspectRatioOptions}

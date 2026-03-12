@@ -50,6 +50,8 @@ import {
   DEFAULT_IMAGE_MODEL_ID,
   getImageModel,
   listImageModels,
+  resolveImageModelResolution,
+  resolveImageModelResolutions,
 } from '@/features/canvas/models';
 import { GRSAI_NANO_BANANA_PRO_MODEL_ID } from '@/features/canvas/models/image/grsai/nanoBananaPro';
 import { FAL_NANO_BANANA_2_MODEL_ID } from '@/features/canvas/models/image/fal/nanoBanana2';
@@ -278,13 +280,23 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     return getImageModel(modelId);
   }, [data.model]);
   const providerApiKey = apiKeys[selectedModel.providerId] ?? '';
+  const effectiveExtraParams = useMemo(
+    () => ({
+      ...(data.extraParams ?? {}),
+      ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
+        ? { grsai_pro_model: grsaiNanoBananaProModel }
+        : {}),
+    }),
+    [data.extraParams, grsaiNanoBananaProModel, selectedModel.id]
+  );
+  const resolutionOptions = useMemo(
+    () => resolveImageModelResolutions(selectedModel, { extraParams: effectiveExtraParams }),
+    [effectiveExtraParams, selectedModel]
+  );
 
   const selectedResolution = useMemo(
-    () =>
-      selectedModel.resolutions.find((item) => item.value === data.size) ??
-      selectedModel.resolutions.find((item) => item.value === selectedModel.defaultResolution) ??
-      selectedModel.resolutions[0],
-    [data.size, selectedModel]
+    () => resolveImageModelResolution(selectedModel, data.size, { extraParams: effectiveExtraParams }),
+    [data.size, effectiveExtraParams, selectedModel]
   );
 
   const aspectRatioOptions = useMemo<AspectRatioChoice[]>(
@@ -309,21 +321,12 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     selectedModel.id === FAL_NANO_BANANA_2_MODEL_ID ||
     selectedModel.id === KIE_NANO_BANANA_2_MODEL_ID;
   const webSearchEnabled = Boolean(data.extraParams?.enable_web_search);
-  const pricingExtraParams = useMemo(
-    () => ({
-      ...(data.extraParams ?? {}),
-      ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-        ? { grsai_pro_model: grsaiNanoBananaProModel }
-        : {}),
-    }),
-    [data.extraParams, grsaiNanoBananaProModel, selectedModel.id]
-  );
   const resolvedPriceDisplay = useMemo(
     () =>
       showNodePrice
         ? resolveModelPriceDisplay(selectedModel, {
           resolution: selectedResolution.value,
-          extraParams: pricingExtraParams,
+          extraParams: effectiveExtraParams,
           language: i18n.language,
           settings: {
             displayCurrencyMode: priceDisplayCurrencyMode,
@@ -338,7 +341,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       i18n.language,
       preferDiscountedPrice,
       priceDisplayCurrencyMode,
-      pricingExtraParams,
+      effectiveExtraParams,
       selectedModel,
       selectedResolution.value,
       showNodePrice,
@@ -520,12 +523,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         size: selectedResolution.value,
         aspectRatio: resolvedRequestAspectRatio,
         referenceImages: incomingImages,
-        extraParams: {
-          ...(data.extraParams ?? {}),
-          ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-            ? { grsai_pro_model: grsaiNanoBananaProModel }
-            : {}),
-        },
+        extraParams: effectiveExtraParams,
       });
       const generationDebugContext: GenerationDebugContext = {
         sourceType: 'imageEdit',
@@ -534,12 +532,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         requestSize: selectedResolution.value,
         requestAspectRatio: resolvedRequestAspectRatio,
         prompt,
-        extraParams: {
-          ...(data.extraParams ?? {}),
-          ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-            ? { grsai_pro_model: grsaiNanoBananaProModel }
-            : {}),
-        },
+        extraParams: effectiveExtraParams,
         referenceImageCount: incomingImages.length,
         referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length),
         appVersion: runtimeDiagnostics.appVersion,
@@ -564,12 +557,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         requestSize: selectedResolution.value,
         requestAspectRatio: selectedAspectRatio.value,
         prompt,
-        extraParams: {
-          ...(data.extraParams ?? {}),
-          ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-            ? { grsai_pro_model: grsaiNanoBananaProModel }
-            : {}),
-        },
+        extraParams: effectiveExtraParams,
         referenceImageCount: incomingImages.length,
         referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length),
         appVersion: runtimeDiagnostics.appVersion,
@@ -607,8 +595,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     providerApiKey,
     findNodePosition,
     promptDraft,
-    data.extraParams,
-    grsaiNanoBananaProModel,
+    effectiveExtraParams,
     id,
     incomingImages,
     requestResolution.requestModel,
@@ -826,6 +813,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         <ModelParamsControls
           imageModels={imageModels}
           selectedModel={selectedModel}
+          resolutionOptions={resolutionOptions}
           selectedResolution={selectedResolution}
           selectedAspectRatio={selectedAspectRatio}
           aspectRatioOptions={aspectRatioOptions}

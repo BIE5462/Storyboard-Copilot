@@ -1,4 +1,9 @@
-import type { ImageModelDefinition, ModelProviderDefinition } from './types';
+import type {
+  ImageModelDefinition,
+  ImageModelRuntimeContext,
+  ModelProviderDefinition,
+  ResolutionOption,
+} from './types';
 
 const providerModules = import.meta.glob<{ provider: ModelProviderDefinition }>(
   './providers/*.ts',
@@ -44,6 +49,31 @@ export function listModelProviders(): ModelProviderDefinition[] {
 export function getImageModel(modelId: string): ImageModelDefinition {
   const resolvedModelId = imageModelAliasMap.get(modelId) ?? modelId;
   return imageModelMap.get(resolvedModelId) ?? imageModelMap.get(DEFAULT_IMAGE_MODEL_ID)!;
+}
+
+export function resolveImageModelResolutions(
+  model: ImageModelDefinition,
+  context: ImageModelRuntimeContext = {}
+): ResolutionOption[] {
+  const resolvedOptions = model.resolveResolutions?.(context);
+  return resolvedOptions && resolvedOptions.length > 0 ? resolvedOptions : model.resolutions;
+}
+
+export function resolveImageModelResolution(
+  model: ImageModelDefinition,
+  requestedResolution: string | undefined,
+  context: ImageModelRuntimeContext = {}
+): ResolutionOption {
+  const resolutionOptions = resolveImageModelResolutions(model, context);
+
+  return (
+    (requestedResolution
+      ? resolutionOptions.find((item) => item.value === requestedResolution)
+      : undefined) ??
+    resolutionOptions.find((item) => item.value === model.defaultResolution) ??
+    resolutionOptions[0] ??
+    model.resolutions[0]
+  );
 }
 
 export function getModelProvider(providerId: string): ModelProviderDefinition {
