@@ -1,4 +1,4 @@
-use super::super::adapter::QianhaiModelAdapter;
+use super::adapter::QianhaiModelAdapter;
 
 automod::dir!("src/ai/providers/qianhai/models");
 
