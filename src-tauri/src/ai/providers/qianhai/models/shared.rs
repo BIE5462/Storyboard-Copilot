@@ -1,0 +1,199 @@
+use base64::{engine::general_purpose::STANDARD, Engine};
+use serde_json::{json, Map, Value};
+use std::path::{Path, PathBuf};
+
+use crate::ai::error::AIError;
+use crate::ai::GenerateRequest;
+
+use super::super::adapter::{PreparedRequest, QianhaiModelAdapter};
+
+pub struct GoogleCompatibleImagePreviewAdapter {
+    canonical_model: &'static str,
+    aliases: &'static [&'static str],
+}
+
+impl GoogleCompatibleImagePreviewAdapter {
+    pub fn new(canonical_model: &'static str, aliases: &'static [&'static str]) -> Self {
+        Self {
+            canonical_model,
+            aliases,
+        }
+    }
+
+    fn request_model_name(&self) -> &'static str {
+        self.canonical_model
+            .split_once('/')
+            .map(|(_, model)| model)
+            .unwrap_or(self.canonical_model)
+    }
+}
+
+fn decode_file_url_path(value: &str) -> String {
+    let raw = value.trim_start_matches("file://");
+    let decoded = urlencoding::decode(raw)
+        .map(|result| result.into_owned())
+        .unwrap_or_else(|_| raw.to_string());
+    let normalized = if decoded.starts_with('/')
+        && decoded.len() > 2
+        && decoded.as_bytes().get(2) == Some(&b':')
+    {
+        &decoded[1..]
+    } else {
+        &decoded
+    };
+
+    normalized.to_string()
+}
+
+fn infer_mime_type(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        Some("gif") => "image/gif",
+        _ => "image/png",
+    }
+}
+
+fn resolve_inline_image_part(source: &str) -> Option<Value> {
+    let trimmed = source.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Some((meta, payload)) = trimmed.split_once(',') {
+        if meta.starts_with("data:") && meta.ends_with(";base64") && !payload.is_empty() {
+            let mime_type = meta
+                .trim_start_matches("data:")
+                .trim_end_matches(";base64")
+                .trim();
+            let resolved_mime_type = if mime_type.is_empty() {
+                "image/png"
+            } else {
+                mime_type
+            };
+
+            return Some(json!({
+                "inlineData": {
+                    "mimeType": resolved_mime_type,
+                    "data": payload,
+                }
+            }));
+        }
+    }
+
+    let path = if trimmed.starts_with("file://") {
+        PathBuf::from(decode_file_url_path(trimmed))
+    } else {
+        PathBuf::from(trimmed)
+    };
+
+    let bytes = std::fs::read(&path).ok()?;
+    let mime_type = infer_mime_type(&path);
+
+    Some(json!({
+        "inlineData": {
+            "mimeType": mime_type,
+            "data": STANDARD.encode(bytes),
+        }
+    }))
+}
+
+fn truncate_for_log(input: &str, max_chars: usize) -> String {
+    if input.chars().count() <= max_chars {
+        return input.to_string();
+    }
+
+    input.chars().take(max_chars).collect::<String>()
+}
+
+impl QianhaiModelAdapter for GoogleCompatibleImagePreviewAdapter {
+    fn model_aliases(&self) -> &'static [&'static str] {
+        self.aliases
+    }
+
+    fn build_request(
+        &self,
+        request: &GenerateRequest,
+        base_url: &str,
+    ) -> Result<PreparedRequest, AIError> {
+        let has_reference_images = request
+            .reference_images
+            .as_ref()
+            .map(|images| !images.is_empty())
+            .unwrap_or(false);
+
+        let mut parts = vec![json!({ "text": request.prompt.as_str() })];
+
+        if let Some(reference_images) = request.reference_images.as_ref() {
+            let image_parts = reference_images
+                .iter()
+                .take(5)
+                .filter_map(|image| resolve_inline_image_part(image))
+                .collect::<Vec<Value>>();
+
+            if has_reference_images && image_parts.is_empty() {
+                return Err(AIError::InvalidRequest(
+                    "Reference images are present but no valid inlineData payload was found"
+                        .to_string(),
+                ));
+            }
+
+            parts.extend(image_parts);
+        }
+
+        let mut generation_config = Map::new();
+        generation_config.insert("responseModalities".to_string(), json!(["IMAGE", "TEXT"]));
+
+        let mut image_config = Map::new();
+        if !request.aspect_ratio.trim().is_empty() && request.aspect_ratio != "Auto" {
+            image_config.insert(
+                "aspectRatio".to_string(),
+                Value::String(request.aspect_ratio.clone()),
+            );
+        } else if !request.size.trim().is_empty() && request.size != "Auto" {
+            image_config.insert("aspectRatio".to_string(), Value::String("1:1".to_string()));
+        }
+
+        if !request.size.trim().is_empty() && request.size != "Auto" {
+            image_config.insert("imageSize".to_string(), Value::String(request.size.clone()));
+        }
+
+        if !image_config.is_empty() {
+            generation_config.insert("imageConfig".to_string(), Value::Object(image_config));
+        }
+
+        let mode_label = if has_reference_images { "edit" } else { "generate" };
+        let endpoint = format!(
+            "{}/v1beta/models/{}:generateContent",
+            base_url.trim_end_matches('/'),
+            self.request_model_name()
+        );
+        let body = json!({
+            "contents": [{
+                "role": "user",
+                "parts": parts,
+            }],
+            "generationConfig": Value::Object(generation_config),
+        });
+        let summary = format!(
+            "model: {}, mode: {}, images: {}, size: {}, aspect_ratio: {}, prompt: {}",
+            self.canonical_model(),
+            mode_label,
+            request.reference_images.as_ref().map(|images| images.len()).unwrap_or(0),
+            request.size.as_str(),
+            request.aspect_ratio.as_str(),
+            truncate_for_log(request.prompt.as_str(), 100)
+        );
+
+        Ok(PreparedRequest {
+            endpoint,
+            body,
+            summary,
+        })
+    }
+}

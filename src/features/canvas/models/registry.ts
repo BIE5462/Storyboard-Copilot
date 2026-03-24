@@ -36,6 +36,8 @@ export const DEFAULT_IMAGE_MODEL_ID = 'kie/nano-banana-2';
 const imageModelAliasMap = new Map<string, string>([
   ['gemini-3.1-flash', 'ppio/gemini-3.1-flash'],
   ['gemini-3.1-flash-edit', 'ppio/gemini-3.1-flash'],
+  ['gemini-3-pro-image-preview', 'qianhai/gemini-3-pro-image-preview'],
+  ['gemini-3.1-flash-image-preview', 'qianhai/gemini-3.1-flash-image-preview'],
 ]);
 
 export function listImageModels(): ImageModelDefinition[] {
