@@ -32,6 +32,7 @@ interface SettingsCheckboxCardProps {
 }
 
 const PROVIDER_REGISTER_URLS: Record<string, string> = {
+  qianhai: 'https://api.qianhai.online',
   ppio: 'https://ppio.com/user/register?invited_by=WGY0DZ',
   grsai: 'https://grsai.com',
   kie: 'https://kie.ai?ref=eef20ef0b0595cad227d45b29c635f6c',
@@ -39,6 +40,7 @@ const PROVIDER_REGISTER_URLS: Record<string, string> = {
 };
 
 const PROVIDER_GET_KEY_URLS: Record<string, string> = {
+  qianhai: 'https://api.qianhai.online',
   ppio: 'https://ppio.com/settings/key-management',
   grsai: 'https://grsai.com/zh/dashboard/api-keys',
   kie: 'https://kie.ai/api-key',
@@ -133,7 +135,7 @@ export function SettingsDialog({
     setEnableUpdateDialog,
   } = useSettingsStore();
   const providers = useMemo(() => {
-    const providerOrder = ['kie', 'ppio', 'fal', 'grsai'];
+    const providerOrder = ['qianhai', 'kie', 'ppio', 'fal', 'grsai'];
     const providerIndex = new Map(providerOrder.map((id, index) => [id, index]));
     return listModelProviders().slice().sort((left, right) => {
       const leftIndex = providerIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER;
@@ -505,12 +507,32 @@ export function SettingsDialog({
                 <div className="ui-scrollbar flex-1 space-y-4 overflow-y-auto p-6">
                   {providers.map((provider) => {
                     const displayName = i18n.language.startsWith('zh') ? provider.label : provider.name;
+                    const isRecommendedProvider = provider.id === 'qianhai';
                     const isRevealed = Boolean(revealedApiKeys[provider.id]);
 
                     return (
-                      <div key={provider.id} className="rounded-lg border border-border-dark bg-bg-dark p-4">
+                      <div
+                        key={provider.id}
+                        className={`rounded-lg border p-4 ${
+                          isRecommendedProvider
+                            ? 'border-accent/40 bg-accent/5 shadow-[0_0_0_1px_rgba(59,130,246,0.08)]'
+                            : 'border-border-dark bg-bg-dark'
+                        }`}
+                      >
                         <div className="mb-3">
-                          <h3 className="text-sm font-medium text-text-dark">{displayName}</h3>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-medium text-text-dark">{displayName}</h3>
+                            {isRecommendedProvider ? (
+                              <span className="inline-flex items-center rounded-full bg-accent/12 px-2 py-0.5 text-[11px] font-medium text-accent ring-1 ring-accent/25">
+                                {t('settings.providerRecommendedBadge')}
+                              </span>
+                            ) : null}
+                          </div>
+                          {isRecommendedProvider ? (
+                            <p className="mt-1 text-xs text-accent">
+                              {t('settings.providerRecommendedHint')}
+                            </p>
+                          ) : null}
                           {PROVIDER_REGISTER_URLS[provider.id] && PROVIDER_GET_KEY_URLS[provider.id] ? (
                             <p className="text-xs text-text-muted">
                               {t('settings.providerApiKeyGuidePrefix')}{' '}

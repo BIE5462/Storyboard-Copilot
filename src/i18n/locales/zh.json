@@ -213,6 +213,8 @@
     "addProvider": "添加供应商",
     "providerPpioName": "派欧云",
     "comingSoon": "即将推出...",
+    "providerRecommendedBadge": "推荐优先",
+    "providerRecommendedHint": "国内用户建议优先使用千海，价格和稳定性更友好。",
     "radiusPreset": "圆角大小",
     "radiusPresetDesc": "控制面板、输入框与节点的全局圆角风格。",
     "radiusCompact": "紧凑",

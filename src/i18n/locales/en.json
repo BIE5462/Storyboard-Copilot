@@ -213,6 +213,8 @@
     "addProvider": "Add Provider",
     "providerPpioName": "PPIO",
     "comingSoon": "Coming soon...",
+    "providerRecommendedBadge": "Recommended",
+    "providerRecommendedHint": "Qianhai is the preferred option for most users thanks to better price and stability.",
     "radiusPreset": "Corner Radius",
     "radiusPresetDesc": "Control global corner style for panels, inputs, and nodes.",
     "radiusCompact": "Compact",
