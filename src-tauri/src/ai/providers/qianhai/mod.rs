@@ -6,7 +6,8 @@ use reqwest::Client;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::info;
+use tokio::time::{sleep, Duration};
+use tracing::{info, warn};
 
 use crate::ai::error::AIError;
 use crate::ai::AIProvider;
@@ -31,8 +32,60 @@ impl QianhaiProvider {
     }
 
     pub async fn set_api_key(&self, api_key: String) {
+        {
+            let key = self.api_key.read().await;
+            if key.as_deref() == Some(api_key.as_str()) {
+                return;
+            }
+        }
+
         let mut key = self.api_key.write().await;
         *key = Some(api_key);
+    }
+
+    async fn post_with_retry(
+        &self,
+        endpoint: &str,
+        api_key: &str,
+        body: &Value,
+    ) -> Result<reqwest::Response, AIError> {
+        const MAX_ATTEMPTS: usize = 3;
+        const RETRY_DELAYS_MS: [u64; MAX_ATTEMPTS - 1] = [300, 900];
+
+        for attempt in 1..=MAX_ATTEMPTS {
+            let response = self
+                .client
+                .post(endpoint)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(body)
+                .send()
+                .await;
+
+            match response {
+                Ok(response) => return Ok(response),
+                Err(error) => {
+                    let should_retry = attempt < MAX_ATTEMPTS;
+                    if !should_retry {
+                        return Err(AIError::Network(error));
+                    }
+
+                    let delay_ms = RETRY_DELAYS_MS[attempt - 1];
+                    warn!(
+                        "[Qianhai API] request attempt {}/{} failed: {}; retrying in {}ms",
+                        attempt,
+                        MAX_ATTEMPTS,
+                        error,
+                        delay_ms
+                    );
+                    sleep(Duration::from_millis(delay_ms)).await;
+                }
+            }
+        }
+
+        Err(AIError::Provider(
+            "Qianhai request exhausted retry attempts".to_string(),
+        ))
     }
 }
 
@@ -162,9 +215,11 @@ impl AIProvider for QianhaiProvider {
     }
 
     async fn generate(&self, request: crate::ai::GenerateRequest) -> Result<String, AIError> {
-        let key = self.api_key.read().await;
-        let api_key = key
-            .as_ref()
+        let api_key = self
+            .api_key
+            .read()
+            .await
+            .clone()
             .ok_or_else(|| AIError::InvalidRequest("API key not set".to_string()))?;
 
         let adapter = self
@@ -178,12 +233,7 @@ impl AIProvider for QianhaiProvider {
         info!("[Qianhai API] URL: {}", prepared.endpoint);
 
         let response = self
-            .client
-            .post(&prepared.endpoint)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("Content-Type", "application/json")
-            .json(&prepared.body)
-            .send()
+            .post_with_retry(&prepared.endpoint, &api_key, &prepared.body)
             .await?;
 
         let status = response.status();
