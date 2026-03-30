@@ -18,6 +18,10 @@ export const QIANHAI_IMAGE_ASPECT_RATIOS = [
 ] as const;
 
 export const QIANHAI_IMAGE_RESOLUTIONS = ['0.5K', '1K', '2K', '4K'] as const;
+export const QIANHAI_IMAGE_REQUEST_MODELS = [
+  'gemini-3.1-flash-image-preview',
+  'gemini-3-pro-image-preview',
+] as const;
 
 interface CreateQianhaiImageModelOptions {
   id: string;

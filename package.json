@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "sync:version": "node scripts/sync-version.mjs",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "test:qianhai": "node scripts/test-qianhai-gemini-image-preview.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.75.0",

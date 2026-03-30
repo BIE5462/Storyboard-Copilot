@@ -12,10 +12,15 @@ export type ThemeTonePreset = 'neutral' | 'warm' | 'cool';
 export type CanvasEdgeRoutingMode = 'spline' | 'orthogonal' | 'smartOrthogonal';
 export type ProviderApiKeys = Record<string, string>;
 export const DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL = 'nano-banana-pro';
+// Keep in sync with src-tauri/src/commands/ai.rs qianhai scheduler defaults.
+export const DEFAULT_QIANHAI_MAX_CONCURRENT_GENERATIONS = 1;
+export const DEFAULT_QIANHAI_RETRY_LIMIT = 1;
 
 interface SettingsState {
   isHydrated: boolean;
   apiKeys: ProviderApiKeys;
+  qianhaiMaxConcurrentGenerations: number;
+  qianhaiRetryLimit: number;
   grsaiNanoBananaProModel: string;
   hideProviderGuidePopover: boolean;
   downloadPresetPaths: string[];
@@ -38,6 +43,8 @@ interface SettingsState {
   autoCheckAppUpdateOnLaunch: boolean;
   enableUpdateDialog: boolean;
   setProviderApiKey: (providerId: string, key: string) => void;
+  setQianhaiMaxConcurrentGenerations: (value: number) => void;
+  setQianhaiRetryLimit: (value: number) => void;
   setGrsaiNanoBananaProModel: (model: string) => void;
   setHideProviderGuidePopover: (hide: boolean) => void;
   setDownloadPresetPaths: (paths: string[]) => void;
@@ -73,6 +80,26 @@ function normalizeHexColor(input: string): string {
 
 function normalizeApiKey(input: string): string {
   return input.trim();
+}
+
+function normalizeQianhaiMaxConcurrentGenerations(
+  input: number | string | null | undefined
+): number {
+  const numeric = typeof input === 'number' ? input : Number(input);
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_QIANHAI_MAX_CONCURRENT_GENERATIONS;
+  }
+
+  return Math.min(10, Math.max(1, Math.round(numeric)));
+}
+
+function normalizeQianhaiRetryLimit(input: number | string | null | undefined): number {
+  const numeric = typeof input === 'number' ? input : Number(input);
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_QIANHAI_RETRY_LIMIT;
+  }
+
+  return Math.min(5, Math.max(0, Math.round(numeric)));
 }
 
 function normalizePriceDisplayCurrencyMode(
@@ -163,6 +190,8 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       isHydrated: false,
       apiKeys: {},
+      qianhaiMaxConcurrentGenerations: DEFAULT_QIANHAI_MAX_CONCURRENT_GENERATIONS,
+      qianhaiRetryLimit: DEFAULT_QIANHAI_RETRY_LIMIT,
       grsaiNanoBananaProModel: DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL,
       hideProviderGuidePopover: false,
       downloadPresetPaths: [],
@@ -191,6 +220,16 @@ export const useSettingsStore = create<SettingsState>()(
             [providerId]: normalizeApiKey(key),
           },
         })),
+      setQianhaiMaxConcurrentGenerations: (qianhaiMaxConcurrentGenerations) =>
+        set({
+          qianhaiMaxConcurrentGenerations: normalizeQianhaiMaxConcurrentGenerations(
+            qianhaiMaxConcurrentGenerations
+          ),
+        }),
+      setQianhaiRetryLimit: (qianhaiRetryLimit) =>
+        set({
+          qianhaiRetryLimit: normalizeQianhaiRetryLimit(qianhaiRetryLimit),
+        }),
       setGrsaiNanoBananaProModel: (model) =>
         set({
           grsaiNanoBananaProModel: normalizeGrsaiNanoBananaProModel(model),
@@ -236,7 +275,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 10,
+      version: 11,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {
@@ -249,6 +288,8 @@ export const useSettingsStore = create<SettingsState>()(
         const state = (persistedState ?? {}) as {
           apiKey?: string;
           apiKeys?: ProviderApiKeys;
+          qianhaiMaxConcurrentGenerations?: number | string;
+          qianhaiRetryLimit?: number | string;
           ignoreAtTagWhenCopyingAndGenerating?: boolean;
           grsaiNanoBananaProModel?: string;
           hideProviderGuidePopover?: boolean;
@@ -273,6 +314,10 @@ export const useSettingsStore = create<SettingsState>()(
             ...(persistedState as object),
             isHydrated: true,
             apiKeys: migratedApiKeys,
+            qianhaiMaxConcurrentGenerations: normalizeQianhaiMaxConcurrentGenerations(
+              state.qianhaiMaxConcurrentGenerations
+            ),
+            qianhaiRetryLimit: normalizeQianhaiRetryLimit(state.qianhaiRetryLimit),
             ignoreAtTagWhenCopyingAndGenerating,
             grsaiNanoBananaProModel: normalizeGrsaiNanoBananaProModel(
               state.grsaiNanoBananaProModel
@@ -300,6 +345,10 @@ export const useSettingsStore = create<SettingsState>()(
           ...(persistedState as object),
           isHydrated: true,
           apiKeys: state.apiKey ? { ppio: normalizeApiKey(state.apiKey) } : {},
+          qianhaiMaxConcurrentGenerations: normalizeQianhaiMaxConcurrentGenerations(
+            state.qianhaiMaxConcurrentGenerations
+          ),
+          qianhaiRetryLimit: normalizeQianhaiRetryLimit(state.qianhaiRetryLimit),
           ignoreAtTagWhenCopyingAndGenerating,
           grsaiNanoBananaProModel: normalizeGrsaiNanoBananaProModel(
             state.grsaiNanoBananaProModel

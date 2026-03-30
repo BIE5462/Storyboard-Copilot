@@ -16,6 +16,7 @@ import {
   EXPORT_RESULT_NODE_MIN_HEIGHT,
   type CanvasNodeType,
   type ExportImageNodeData,
+  type GenerationJobProgressState,
   type ImageEditNodeData,
 } from '@/features/canvas/domain/canvasNodes';
 import {
@@ -64,6 +65,17 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
     typeof data.generationStartedAt === 'number' ? data.generationStartedAt : null;
   const generationDurationMs =
     typeof data.generationDurationMs === 'number' ? data.generationDurationMs : 60000;
+  const generationStatus =
+    typeof (data as { generationStatus?: unknown }).generationStatus === 'string'
+      ? ((data as { generationStatus?: GenerationJobProgressState }).generationStatus ?? null)
+      : null;
+  const generationAttemptCount =
+    typeof (data as { generationAttemptCount?: unknown }).generationAttemptCount === 'number'
+      ? Math.max(
+        0,
+        Math.round((data as { generationAttemptCount?: number }).generationAttemptCount ?? 0)
+      )
+      : 0;
   const resolvedAspectRatio = data.aspectRatio || DEFAULT_ASPECT_RATIO;
   const compactSize = resolveMinEdgeFittedSize(resolvedAspectRatio, {
     minWidth: EXPORT_RESULT_NODE_MIN_WIDTH,
@@ -126,12 +138,32 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
       return t('node.imageNode.selectToEdit');
     }
 
+    if (generationStatus === 'queued') {
+      return t('node.imageNode.queued');
+    }
+
+    if (generationStatus === 'retrying') {
+      return t('node.imageNode.retryPreparing', {
+        count: Math.max(1, generationAttemptCount),
+      });
+    }
+
+    if (generationStatus === 'running') {
+      if (generationAttemptCount > 1) {
+        return t('node.imageNode.retryRunning', {
+          count: generationAttemptCount - 1,
+        });
+      }
+
+      return t('node.imageNode.generating');
+    }
+
     if (!isGenerating || waitedMinutes < 2) {
       return t('node.imageNode.waitingResult');
     }
 
     return t('node.imageNode.waitingResultDelayed', { minutes: waitedMinutes });
-  }, [isExportResultNode, isGenerating, t, waitedMinutes]);
+  }, [generationAttemptCount, generationStatus, isExportResultNode, isGenerating, t, waitedMinutes]);
 
   const imageSource = useMemo(() => {
     const preferOriginal = shouldUseOriginalImageByZoom(zoom);

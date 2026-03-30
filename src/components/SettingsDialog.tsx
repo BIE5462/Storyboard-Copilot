@@ -91,6 +91,8 @@ export function SettingsDialog({
   const { t, i18n } = useTranslation();
   const {
     apiKeys,
+    qianhaiMaxConcurrentGenerations,
+    qianhaiRetryLimit,
     grsaiNanoBananaProModel,
     hideProviderGuidePopover,
     downloadPresetPaths,
@@ -113,6 +115,8 @@ export function SettingsDialog({
     autoCheckAppUpdateOnLaunch,
     enableUpdateDialog,
     setProviderApiKey,
+    setQianhaiMaxConcurrentGenerations,
+    setQianhaiRetryLimit,
     setGrsaiNanoBananaProModel,
     setDownloadPresetPaths,
     setUseUploadFilenameAsNodeTitle,
@@ -146,6 +150,9 @@ export function SettingsDialog({
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>(initialCategory);
   const [appVersion, setAppVersion] = useState<string>('');
   const [localApiKeys, setLocalApiKeys] = useState<Record<string, string>>(apiKeys);
+  const [localQianhaiMaxConcurrentGenerations, setLocalQianhaiMaxConcurrentGenerations] =
+    useState(String(qianhaiMaxConcurrentGenerations));
+  const [localQianhaiRetryLimit, setLocalQianhaiRetryLimit] = useState(String(qianhaiRetryLimit));
   const [localGrsaiNanoBananaProModel, setLocalGrsaiNanoBananaProModel] = useState(
     grsaiNanoBananaProModel
   );
@@ -214,6 +221,8 @@ export function SettingsDialog({
       return;
     }
     setLocalApiKeys(apiKeys);
+    setLocalQianhaiMaxConcurrentGenerations(String(qianhaiMaxConcurrentGenerations));
+    setLocalQianhaiRetryLimit(String(qianhaiRetryLimit));
     setLocalDownloadPresetPaths(downloadPresetPaths);
     setLocalGrsaiNanoBananaProModel(grsaiNanoBananaProModel);
     setLocalUseUploadFilenameAsNodeTitle(useUploadFilenameAsNodeTitle);
@@ -253,6 +262,8 @@ export function SettingsDialog({
     providers.forEach((provider) => {
       setProviderApiKey(provider.id, localApiKeys[provider.id] ?? '');
     });
+    setQianhaiMaxConcurrentGenerations(Number(localQianhaiMaxConcurrentGenerations));
+    setQianhaiRetryLimit(Number(localQianhaiRetryLimit));
     setGrsaiNanoBananaProModel(localGrsaiNanoBananaProModel);
     setDownloadPresetPaths(localDownloadPresetPaths);
     setUseUploadFilenameAsNodeTitle(localUseUploadFilenameAsNodeTitle);
@@ -276,6 +287,8 @@ export function SettingsDialog({
     onClose();
   }, [
     localApiKeys,
+    localQianhaiMaxConcurrentGenerations,
+    localQianhaiRetryLimit,
     localDownloadPresetPaths,
     localGrsaiNanoBananaProModel,
     localUseUploadFilenameAsNodeTitle,
@@ -298,6 +311,8 @@ export function SettingsDialog({
     localEnableUpdateDialog,
     providers,
     setProviderApiKey,
+    setQianhaiMaxConcurrentGenerations,
+    setQianhaiRetryLimit,
     setGrsaiNanoBananaProModel,
     setDownloadPresetPaths,
     setUseUploadFilenameAsNodeTitle,
@@ -591,6 +606,48 @@ export function SettingsDialog({
                             )}
                           </button>
                         </div>
+
+                        {provider.id === 'qianhai' && (
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            <div className="rounded-lg border border-border-dark/80 bg-surface-dark/60 p-3">
+                              <div className="text-xs font-medium text-text-dark">
+                                {t('settings.qianhaiMaxConcurrentGenerations')}
+                              </div>
+                              <p className="mt-1 text-[11px] leading-5 text-text-muted">
+                                {t('settings.qianhaiMaxConcurrentGenerationsDesc')}
+                              </p>
+                              <input
+                                type="number"
+                                min={1}
+                                max={10}
+                                step={1}
+                                value={localQianhaiMaxConcurrentGenerations}
+                                onChange={(event) =>
+                                  setLocalQianhaiMaxConcurrentGenerations(event.target.value)
+                                }
+                                className="mt-2 h-9 w-full rounded border border-border-dark bg-bg-dark px-3 text-sm text-text-dark"
+                              />
+                            </div>
+
+                            <div className="rounded-lg border border-border-dark/80 bg-surface-dark/60 p-3">
+                              <div className="text-xs font-medium text-text-dark">
+                                {t('settings.qianhaiRetryLimit')}
+                              </div>
+                              <p className="mt-1 text-[11px] leading-5 text-text-muted">
+                                {t('settings.qianhaiRetryLimitDesc')}
+                              </p>
+                              <input
+                                type="number"
+                                min={0}
+                                max={5}
+                                step={1}
+                                value={localQianhaiRetryLimit}
+                                onChange={(event) => setLocalQianhaiRetryLimit(event.target.value)}
+                                className="mt-2 h-9 w-full rounded border border-border-dark bg-bg-dark px-3 text-sm text-text-dark"
+                              />
+                            </div>
+                          </div>
+                        )}
 
                         {provider.id === 'grsai' && (
                           <div className="mt-3">

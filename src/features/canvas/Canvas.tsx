@@ -462,7 +462,18 @@ export function Canvas() {
               continue;
             }
 
-            if (status.status === 'queued' || status.status === 'running') {
+            if (
+              status.status === 'queued'
+              || status.status === 'running'
+              || status.status === 'retrying'
+            ) {
+              updateNodeData(pendingNode.id, {
+                generationStatus: status.status,
+                generationAttemptCount: status.attempt_count,
+                generationRetryLimit: status.retry_limit,
+                generationError: null,
+                generationErrorDetails: null,
+              });
               await sleep(GENERATION_JOB_POLL_INTERVAL_MS);
               continue;
             }
@@ -503,6 +514,9 @@ export function Canvas() {
                 generationJobId: null,
                 generationProviderId: null,
                 generationClientSessionId: null,
+                generationStatus: null,
+                generationAttemptCount: 0,
+                generationRetryLimit: 0,
                 generationStoryboardMetadata: undefined,
                 generationError: null,
                 generationErrorDetails: null,
@@ -530,6 +544,9 @@ export function Canvas() {
               generationJobId: null,
               generationProviderId: null,
               generationClientSessionId: null,
+              generationStatus: null,
+              generationAttemptCount: status.attempt_count,
+              generationRetryLimit: status.retry_limit,
               generationStoryboardMetadata: undefined,
               generationError: errorMessage,
               generationErrorDetails: status.error ?? null,
@@ -1119,6 +1136,15 @@ export function Canvas() {
         }
         if ('generationClientSessionId' in (data as Record<string, unknown>)) {
           (data as { generationClientSessionId?: string | null }).generationClientSessionId = null;
+        }
+        if ('generationStatus' in (data as Record<string, unknown>)) {
+          (data as { generationStatus?: string | null }).generationStatus = null;
+        }
+        if ('generationAttemptCount' in (data as Record<string, unknown>)) {
+          (data as { generationAttemptCount?: number }).generationAttemptCount = 0;
+        }
+        if ('generationRetryLimit' in (data as Record<string, unknown>)) {
+          (data as { generationRetryLimit?: number }).generationRetryLimit = 0;
         }
         if ('generationStoryboardMetadata' in (data as Record<string, unknown>)) {
           (data as { generationStoryboardMetadata?: unknown }).generationStoryboardMetadata = undefined;

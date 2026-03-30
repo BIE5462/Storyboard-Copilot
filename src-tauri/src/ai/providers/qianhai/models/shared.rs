@@ -1,4 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
+use image::codecs::jpeg::JpegEncoder;
+use image::imageops::FilterType;
+use image::{ExtendedColorType, GenericImageView};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
@@ -11,6 +14,10 @@ pub struct GoogleCompatibleImagePreviewAdapter {
     canonical_model: &'static str,
     aliases: &'static [&'static str],
 }
+
+const QIANHAI_REFERENCE_IMAGE_MAX_DIMENSION: u32 = 512;
+const QIANHAI_REFERENCE_IMAGE_MAX_BYTES: usize = 400 * 1024;
+const QIANHAI_REFERENCE_IMAGE_JPEG_QUALITY: u8 = 82;
 
 impl GoogleCompatibleImagePreviewAdapter {
     pub fn new(canonical_model: &'static str, aliases: &'static [&'static str]) -> Self {
@@ -59,6 +66,51 @@ fn infer_mime_type(path: &Path) -> &'static str {
     }
 }
 
+fn optimize_reference_image_bytes(bytes: Vec<u8>, mime_type: &str) -> (String, Vec<u8>) {
+    let Ok(image) = image::load_from_memory(&bytes) else {
+        return (mime_type.to_string(), bytes);
+    };
+
+    let (width, height) = image.dimensions();
+    let needs_resize = width > QIANHAI_REFERENCE_IMAGE_MAX_DIMENSION
+        || height > QIANHAI_REFERENCE_IMAGE_MAX_DIMENSION;
+    let needs_reencode = bytes.len() > QIANHAI_REFERENCE_IMAGE_MAX_BYTES;
+
+    if !needs_resize && !needs_reencode {
+        return (mime_type.to_string(), bytes);
+    }
+
+    let processed = if needs_resize {
+        image.resize(
+            QIANHAI_REFERENCE_IMAGE_MAX_DIMENSION,
+            QIANHAI_REFERENCE_IMAGE_MAX_DIMENSION,
+            FilterType::Lanczos3,
+        )
+    } else {
+        image
+    };
+
+    let rgb = processed.to_rgb8();
+    let (encoded_width, encoded_height) = rgb.dimensions();
+    let mut encoded = Vec::new();
+    let mut encoder =
+        JpegEncoder::new_with_quality(&mut encoded, QIANHAI_REFERENCE_IMAGE_JPEG_QUALITY);
+
+    if encoder
+        .encode(
+            &rgb,
+            encoded_width,
+            encoded_height,
+            ExtendedColorType::Rgb8,
+        )
+        .is_ok()
+    {
+        ("image/jpeg".to_string(), encoded)
+    } else {
+        (mime_type.to_string(), bytes)
+    }
+}
+
 fn resolve_inline_image_part(source: &str) -> Option<Value> {
     let trimmed = source.trim();
     if trimmed.is_empty() {
@@ -77,6 +129,18 @@ fn resolve_inline_image_part(source: &str) -> Option<Value> {
                 mime_type
             };
 
+            if let Ok(decoded_bytes) = STANDARD.decode(payload) {
+                let (optimized_mime_type, optimized_bytes) =
+                    optimize_reference_image_bytes(decoded_bytes, resolved_mime_type);
+
+                return Some(json!({
+                    "inlineData": {
+                        "mimeType": optimized_mime_type,
+                        "data": STANDARD.encode(optimized_bytes),
+                    }
+                }));
+            }
+
             return Some(json!({
                 "inlineData": {
                     "mimeType": resolved_mime_type,
@@ -94,11 +158,12 @@ fn resolve_inline_image_part(source: &str) -> Option<Value> {
 
     let bytes = std::fs::read(&path).ok()?;
     let mime_type = infer_mime_type(&path);
+    let (optimized_mime_type, optimized_bytes) = optimize_reference_image_bytes(bytes, mime_type);
 
     Some(json!({
         "inlineData": {
-            "mimeType": mime_type,
-            "data": STANDARD.encode(bytes),
+            "mimeType": optimized_mime_type,
+            "data": STANDARD.encode(optimized_bytes),
         }
     }))
 }
@@ -127,7 +192,7 @@ impl QianhaiModelAdapter for GoogleCompatibleImagePreviewAdapter {
             .map(|images| !images.is_empty())
             .unwrap_or(false);
 
-        let mut parts = vec![json!({ "text": request.prompt.as_str() })];
+        let mut parts = Vec::new();
 
         if let Some(reference_images) = request.reference_images.as_ref() {
             let image_parts = reference_images
@@ -145,6 +210,8 @@ impl QianhaiModelAdapter for GoogleCompatibleImagePreviewAdapter {
 
             parts.extend(image_parts);
         }
+
+        parts.push(json!({ "text": request.prompt.as_str() }));
 
         let mut generation_config = Map::new();
         generation_config.insert("responseModalities".to_string(), json!(["IMAGE", "TEXT"]));

@@ -576,7 +576,9 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const grsaiCreditTierId = useSettingsStore((state) => state.grsaiCreditTierId);
 
   const [error, setError] = useState<string | null>(null);
+  const [isSubmittingGeneration, setIsSubmittingGeneration] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const generationSubmitLockRef = useRef(false);
   const activeFrameTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [pickerFrameIndex, setPickerFrameIndex] = useState<number | null>(null);
@@ -949,6 +951,9 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     if (storyboardGenDisableTextInImage) {
       promptDirectives.push('禁止添加描述文本');
     }
+    if (selectedModel.providerId === 'qianhai') {
+      promptDirectives.push('画面必须为规则四宫格构图，每格独立成画，分格边界清晰');
+    }
     parts.push(`${promptDirectives.join('，')}。`);
 
     frames.forEach((frame, index) => {
@@ -967,6 +972,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     return parts.join('\n');
   }, [
     nodeData,
+    selectedModel.providerId,
     storyboardGenAutoInferEmptyFrame,
     storyboardGenDisableTextInImage,
     storyboardGenKeepStyleConsistent,
@@ -1014,184 +1020,209 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       return;
     }
 
-    const safeRows = Math.max(1, nodeData.gridRows);
-    const safeCols = Math.max(1, nodeData.gridCols);
-    const resolvedRequestAspectRatio = await resolveEffectiveRequestAspectRatio();
+    if (!previewGridOnly && generationSubmitLockRef.current) {
+      return;
+    }
 
-    if (previewGridOnly) {
-      const gridImageDataUrl = generateGridImageDataUrl(
-        resolvedRequestAspectRatio,
-        safeRows,
-        safeCols,
-        selectedResolution.value
-      );
+    if (!previewGridOnly) {
+      generationSubmitLockRef.current = true;
+      setIsSubmittingGeneration(true);
+    }
+
+    try {
+      const safeRows = Math.max(1, nodeData.gridRows);
+      const safeCols = Math.max(1, nodeData.gridCols);
+      const resolvedRequestAspectRatio = await resolveEffectiveRequestAspectRatio();
+
+      if (previewGridOnly) {
+        const gridImageDataUrl = generateGridImageDataUrl(
+          resolvedRequestAspectRatio,
+          safeRows,
+          safeCols,
+          selectedResolution.value
+        );
+        const newNodePosition = findNodePosition(
+          id,
+          EXPORT_RESULT_NODE_DEFAULT_WIDTH,
+          EXPORT_RESULT_NODE_LAYOUT_HEIGHT
+        );
+        const previewNodeId = addNode(
+          CANVAS_NODE_TYPES.exportImage,
+          newNodePosition,
+          {
+            displayName: t('node.storyboardGen.gridPreviewTitle'),
+            resultKind: 'storyboardGenOutput',
+            imageUrl: gridImageDataUrl,
+            previewImageUrl: gridImageDataUrl,
+            aspectRatio: resolvedRequestAspectRatio,
+            isGenerating: false,
+            generationStartedAt: null,
+            requestAspectRatio: resolvedRequestAspectRatio,
+          }
+        );
+        addEdge(id, previewNodeId);
+        setSelectedNode(null);
+        setError(null);
+        return;
+      }
+
+      const prompt = buildPrompt();
+      if (!prompt) {
+        const errorMessage = '请填写至少一个分镜内容描述';
+        setError(errorMessage);
+        void showErrorDialog(errorMessage, '错误');
+        return;
+      }
+
+      if (!providerApiKey) {
+        const errorMessage = '请在设置中填写 API Key';
+        setError(errorMessage);
+        void showErrorDialog(errorMessage, '错误');
+        return;
+      }
+
+      const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
+      const generationStartedAt = Date.now();
+      const runtimeDiagnostics = await getRuntimeDiagnostics();
+
+      // Create new image node with generating state immediately
+      // Use auto-positioning to avoid collisions with existing nodes
       const newNodePosition = findNodePosition(
         id,
         EXPORT_RESULT_NODE_DEFAULT_WIDTH,
         EXPORT_RESULT_NODE_LAYOUT_HEIGHT
       );
-      const previewNodeId = addNode(
+      const newNodeId = addNode(
         CANVAS_NODE_TYPES.exportImage,
         newNodePosition,
         {
-          displayName: t('node.storyboardGen.gridPreviewTitle'),
+          isGenerating: true,
+          generationStartedAt,
+          generationDurationMs,
+          displayName: EXPORT_RESULT_DISPLAY_NAME.storyboardGenOutput,
           resultKind: 'storyboardGenOutput',
-          imageUrl: gridImageDataUrl,
-          previewImageUrl: gridImageDataUrl,
-          aspectRatio: resolvedRequestAspectRatio,
-          isGenerating: false,
-          generationStartedAt: null,
-          requestAspectRatio: resolvedRequestAspectRatio,
+          prompt: '',
+          model: selectedModel.id,
+          size: selectedResolution.value as ImageSize,
+          requestAspectRatio: mappedOverallRequestAspectRatio,
         }
       );
-      addEdge(id, previewNodeId);
+
+      // Connect the storyboard node to the new image node
+      addEdge(id, newNodeId);
+
       setSelectedNode(null);
       setError(null);
-      return;
-    }
 
-    const prompt = buildPrompt();
-    if (!prompt) {
-      const errorMessage = '请填写至少一个分镜内容描述';
-      setError(errorMessage);
-      void showErrorDialog(errorMessage, '错误');
-      return;
-    }
+      try {
+        await canvasAiGateway.setApiKey(selectedModel.providerId, providerApiKey);
 
-    if (!providerApiKey) {
-      const errorMessage = '请在设置中填写 API Key';
-      setError(errorMessage);
-      void showErrorDialog(errorMessage, '错误');
-      return;
-    }
+        // 生成网格图片作为最后一张参考图片
+        const gridImageDataUrl = generateGridImageDataUrl(
+          resolvedRequestAspectRatio,
+          safeRows,
+          safeCols,
+          selectedResolution.value
+        );
 
-    const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
-    const generationStartedAt = Date.now();
-    const runtimeDiagnostics = await getRuntimeDiagnostics();
+        // 将网格图片作为最后一张参考图片
+        const shouldAttachGridReferenceImage = selectedModel.providerId !== 'qianhai';
+        const allReferenceImages = shouldAttachGridReferenceImage
+          ? [...incomingImages, gridImageDataUrl]
+          : [...incomingImages];
 
-    // Create new image node with generating state immediately
-    // Use auto-positioning to avoid collisions with existing nodes
-    const newNodePosition = findNodePosition(
-      id,
-      EXPORT_RESULT_NODE_DEFAULT_WIDTH,
-      EXPORT_RESULT_NODE_LAYOUT_HEIGHT
-    );
-    const newNodeId = addNode(
-      CANVAS_NODE_TYPES.exportImage,
-      newNodePosition,
-      {
-        isGenerating: true,
-        generationStartedAt,
-        generationDurationMs,
-        displayName: EXPORT_RESULT_DISPLAY_NAME.storyboardGenOutput,
-        resultKind: 'storyboardGenOutput',
-        prompt: '',
-        model: selectedModel.id,
-        size: selectedResolution.value as ImageSize,
-        requestAspectRatio: mappedOverallRequestAspectRatio,
-      }
-    );
+        const metadataFrameNotes = nodeData.frames
+          .slice(0, safeRows * safeCols)
+          .map((frame) => {
+            const description = frameDescriptionDraftsRef.current[frame.id] ?? frame.description;
+            return sanitizeStoryboardText(description, ignoreAtTagWhenCopyingAndGenerating);
+          });
 
-    // Connect the storyboard node to the new image node
-    addEdge(id, newNodeId);
-
-    setSelectedNode(null);
-    setError(null);
-
-    try {
-      await canvasAiGateway.setApiKey(selectedModel.providerId, providerApiKey);
-
-      // 生成网格图片作为最后一张参考图片
-      const gridImageDataUrl = generateGridImageDataUrl(
-        resolvedRequestAspectRatio,
-        safeRows,
-        safeCols,
-        selectedResolution.value
-      );
-
-      // 将网格图片作为最后一张参考图片
-      const allReferenceImages = [...incomingImages, gridImageDataUrl];
-
-      const metadataFrameNotes = nodeData.frames
-        .slice(0, safeRows * safeCols)
-        .map((frame) => {
-          const description = frameDescriptionDraftsRef.current[frame.id] ?? frame.description;
-          return sanitizeStoryboardText(description, ignoreAtTagWhenCopyingAndGenerating);
+        const jobId = await canvasAiGateway.submitGenerateImageJob({
+          prompt,
+          model: requestResolution.requestModel,
+          size: selectedResolution.value,
+          aspectRatio: resolvedRequestAspectRatio,
+          referenceImages: allReferenceImages,
+          extraParams: effectiveExtraParams,
         });
-
-      const jobId = await canvasAiGateway.submitGenerateImageJob({
-        prompt,
-        model: requestResolution.requestModel,
-        size: selectedResolution.value,
-        aspectRatio: resolvedRequestAspectRatio,
-        referenceImages: allReferenceImages,
-        extraParams: effectiveExtraParams,
-      });
-      const generationDebugContext: GenerationDebugContext = {
-        sourceType: 'storyboardGen',
-        providerId: selectedModel.providerId,
-        requestModel: requestResolution.requestModel,
-        requestSize: selectedResolution.value,
-        requestAspectRatio: resolvedRequestAspectRatio,
-        prompt,
-        extraParams: effectiveExtraParams,
-        referenceImageCount: allReferenceImages.length,
-        referenceImagePlaceholders: createReferenceImagePlaceholders(allReferenceImages.length),
-        appVersion: runtimeDiagnostics.appVersion,
-        osName: runtimeDiagnostics.osName,
-        osVersion: runtimeDiagnostics.osVersion,
-        osBuild: runtimeDiagnostics.osBuild,
-        userAgent: runtimeDiagnostics.userAgent,
-      };
-      updateNodeData(newNodeId, {
-        generationJobId: jobId,
-        generationSourceType: 'storyboardGen',
-        generationProviderId: selectedModel.providerId,
-        generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
-        generationDebugContext,
-        generationStoryboardMetadata: {
-          gridRows: safeRows,
-          gridCols: safeCols,
-          frameNotes: metadataFrameNotes,
-        },
-      });
-    } catch (generationError) {
-      const resolvedError = resolveErrorContent(generationError, '生成失败');
-      const generationDebugContext: GenerationDebugContext = {
-        sourceType: 'storyboardGen',
-        providerId: selectedModel.providerId,
-        requestModel: requestResolution.requestModel,
-        requestSize: selectedResolution.value,
-        requestAspectRatio: resolvedRequestAspectRatio,
-        prompt,
-        extraParams: effectiveExtraParams,
-        referenceImageCount: incomingImages.length + 1,
-        referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length + 1),
-        appVersion: runtimeDiagnostics.appVersion,
-        osName: runtimeDiagnostics.osName,
-        osVersion: runtimeDiagnostics.osVersion,
-        osBuild: runtimeDiagnostics.osBuild,
-        userAgent: runtimeDiagnostics.userAgent,
-      };
-      const reportText = buildGenerationErrorReport({
-        errorMessage: resolvedError.message,
-        errorDetails: resolvedError.details,
-        context: generationDebugContext,
-      });
-      setError(resolvedError.message);
-      void showErrorDialog(resolvedError.message, '错误', resolvedError.details, reportText);
-      // Clear generating state and mark as failed
-      updateNodeData(newNodeId, {
-        isGenerating: false,
-        generationStartedAt: null,
-        generationJobId: null,
-        generationProviderId: null,
-        generationClientSessionId: null,
-        generationStoryboardMetadata: undefined,
-        generationError: resolvedError.message,
-        generationErrorDetails: resolvedError.details ?? null,
-        generationDebugContext,
-      });
+        const generationDebugContext: GenerationDebugContext = {
+          sourceType: 'storyboardGen',
+          providerId: selectedModel.providerId,
+          requestModel: requestResolution.requestModel,
+          requestSize: selectedResolution.value,
+          requestAspectRatio: resolvedRequestAspectRatio,
+          prompt,
+          extraParams: effectiveExtraParams,
+          referenceImageCount: allReferenceImages.length,
+          referenceImagePlaceholders: createReferenceImagePlaceholders(allReferenceImages.length),
+          appVersion: runtimeDiagnostics.appVersion,
+          osName: runtimeDiagnostics.osName,
+          osVersion: runtimeDiagnostics.osVersion,
+          osBuild: runtimeDiagnostics.osBuild,
+          userAgent: runtimeDiagnostics.userAgent,
+        };
+        updateNodeData(newNodeId, {
+          generationJobId: jobId,
+          generationSourceType: 'storyboardGen',
+          generationProviderId: selectedModel.providerId,
+          generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
+          generationStatus: 'queued',
+          generationAttemptCount: 0,
+          generationRetryLimit: 0,
+          generationDebugContext,
+          generationStoryboardMetadata: {
+            gridRows: safeRows,
+            gridCols: safeCols,
+            frameNotes: metadataFrameNotes,
+          },
+        });
+      } catch (generationError) {
+        const resolvedError = resolveErrorContent(generationError, '生成失败');
+        const generationDebugContext: GenerationDebugContext = {
+          sourceType: 'storyboardGen',
+          providerId: selectedModel.providerId,
+          requestModel: requestResolution.requestModel,
+          requestSize: selectedResolution.value,
+          requestAspectRatio: resolvedRequestAspectRatio,
+          prompt,
+          extraParams: effectiveExtraParams,
+          referenceImageCount: incomingImages.length + 1,
+          referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length + 1),
+          appVersion: runtimeDiagnostics.appVersion,
+          osName: runtimeDiagnostics.osName,
+          osVersion: runtimeDiagnostics.osVersion,
+          osBuild: runtimeDiagnostics.osBuild,
+          userAgent: runtimeDiagnostics.userAgent,
+        };
+        const reportText = buildGenerationErrorReport({
+          errorMessage: resolvedError.message,
+          errorDetails: resolvedError.details,
+          context: generationDebugContext,
+        });
+        setError(resolvedError.message);
+        void showErrorDialog(resolvedError.message, '错误', resolvedError.details, reportText);
+        // Clear generating state and mark as failed
+        updateNodeData(newNodeId, {
+          isGenerating: false,
+          generationStartedAt: null,
+          generationJobId: null,
+          generationProviderId: null,
+          generationClientSessionId: null,
+          generationStatus: null,
+          generationAttemptCount: 0,
+          generationRetryLimit: 0,
+          generationStoryboardMetadata: undefined,
+          generationError: resolvedError.message,
+          generationErrorDetails: resolvedError.details ?? null,
+          generationDebugContext,
+        });
+      }
+    } finally {
+      if (!previewGridOnly) {
+        generationSubmitLockRef.current = false;
+        setIsSubmittingGeneration(false);
+      }
     }
   }, [
     providerApiKey,
@@ -1665,6 +1696,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
               enableStoryboardGenGridPreviewShortcut && event.ctrlKey && event.altKey && event.shiftKey;
             void handleGenerate(previewGridOnly);
           }}
+          disabled={isSubmittingGeneration}
           variant="primary"
           size="sm"
           className={`!min-w-0 shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}

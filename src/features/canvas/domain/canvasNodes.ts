@@ -55,8 +55,16 @@ export type ExportImageNodeResultKind =
   | 'storyboardSplitExport'
   | 'storyboardFrameEdit';
 
+export type GenerationJobProgressState = 'queued' | 'running' | 'retrying';
+
 export interface ExportImageNodeData extends NodeImageData {
   resultKind?: ExportImageNodeResultKind;
+  isGenerating?: boolean;
+  generationStartedAt?: number | null;
+  generationDurationMs?: number;
+  generationStatus?: GenerationJobProgressState | null;
+  generationAttemptCount?: number;
+  generationRetryLimit?: number;
 }
 
 export interface GroupNodeData extends NodeDisplayData {

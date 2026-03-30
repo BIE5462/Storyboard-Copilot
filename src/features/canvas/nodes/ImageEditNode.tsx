@@ -228,8 +228,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const { t, i18n } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
   const [error, setError] = useState<string | null>(null);
+  const [isSubmittingGeneration, setIsSubmittingGeneration] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
+  const generationSubmitLockRef = useRef(false);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const promptHighlightRef = useRef<HTMLDivElement>(null);
   const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
@@ -457,6 +459,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   }, []);
 
   const handleGenerate = useCallback(async () => {
+    if (generationSubmitLockRef.current) {
+      return;
+    }
+
     const prompt = promptDraft.replace(/@(?=图\d+)/g, '').trim();
     if (!prompt) {
       const errorMessage = t('node.imageEdit.promptRequired');
@@ -472,122 +478,136 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       return;
     }
 
-    const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
-    const generationStartedAt = Date.now();
-    const resultNodeTitle = buildAiResultNodeTitle(prompt, t('node.imageEdit.resultTitle'));
-    const runtimeDiagnostics = await getRuntimeDiagnostics();
-    setError(null);
-
-    const newNodePosition = findNodePosition(
-      id,
-      EXPORT_RESULT_NODE_DEFAULT_WIDTH,
-      EXPORT_RESULT_NODE_LAYOUT_HEIGHT
-    );
-    const newNodeId = addNode(
-      CANVAS_NODE_TYPES.exportImage,
-      newNodePosition,
-      {
-        isGenerating: true,
-        generationStartedAt,
-        generationDurationMs,
-        resultKind: 'generic',
-        displayName: resultNodeTitle,
-      }
-    );
-    addEdge(id, newNodeId);
+    generationSubmitLockRef.current = true;
+    setIsSubmittingGeneration(true);
 
     try {
-      await canvasAiGateway.setApiKey(selectedModel.providerId, providerApiKey);
+      const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
+      const generationStartedAt = Date.now();
+      const resultNodeTitle = buildAiResultNodeTitle(prompt, t('node.imageEdit.resultTitle'));
+      const runtimeDiagnostics = await getRuntimeDiagnostics();
+      setError(null);
 
-      let resolvedRequestAspectRatio = selectedAspectRatio.value;
-      if (resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO) {
-        if (incomingImages.length > 0) {
-          try {
-            const sourceAspectRatio = await detectAspectRatio(incomingImages[0]);
-            const sourceAspectRatioValue = parseAspectRatio(sourceAspectRatio);
-            resolvedRequestAspectRatio = pickClosestAspectRatio(
-              sourceAspectRatioValue,
-              supportedAspectRatioValues
-            );
-          } catch {
+      const newNodePosition = findNodePosition(
+        id,
+        EXPORT_RESULT_NODE_DEFAULT_WIDTH,
+        EXPORT_RESULT_NODE_LAYOUT_HEIGHT
+      );
+      const newNodeId = addNode(
+        CANVAS_NODE_TYPES.exportImage,
+        newNodePosition,
+        {
+          isGenerating: true,
+          generationStartedAt,
+          generationDurationMs,
+          resultKind: 'generic',
+          displayName: resultNodeTitle,
+        }
+      );
+      addEdge(id, newNodeId);
+
+      try {
+        await canvasAiGateway.setApiKey(selectedModel.providerId, providerApiKey);
+
+        let resolvedRequestAspectRatio = selectedAspectRatio.value;
+        if (resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO) {
+          if (incomingImages.length > 0) {
+            try {
+              const sourceAspectRatio = await detectAspectRatio(incomingImages[0]);
+              const sourceAspectRatioValue = parseAspectRatio(sourceAspectRatio);
+              resolvedRequestAspectRatio = pickClosestAspectRatio(
+                sourceAspectRatioValue,
+                supportedAspectRatioValues
+              );
+            } catch {
+              resolvedRequestAspectRatio = pickClosestAspectRatio(1, supportedAspectRatioValues);
+            }
+          } else {
             resolvedRequestAspectRatio = pickClosestAspectRatio(1, supportedAspectRatioValues);
           }
-        } else {
-          resolvedRequestAspectRatio = pickClosestAspectRatio(1, supportedAspectRatioValues);
         }
-      }
 
-      const jobId = await canvasAiGateway.submitGenerateImageJob({
-        prompt,
-        model: requestResolution.requestModel,
-        size: selectedResolution.value,
-        aspectRatio: resolvedRequestAspectRatio,
-        referenceImages: incomingImages,
-        extraParams: effectiveExtraParams,
-      });
-      const generationDebugContext: GenerationDebugContext = {
-        sourceType: 'imageEdit',
-        providerId: selectedModel.providerId,
-        requestModel: requestResolution.requestModel,
-        requestSize: selectedResolution.value,
-        requestAspectRatio: resolvedRequestAspectRatio,
-        prompt,
-        extraParams: effectiveExtraParams,
-        referenceImageCount: incomingImages.length,
-        referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length),
-        appVersion: runtimeDiagnostics.appVersion,
-        osName: runtimeDiagnostics.osName,
-        osVersion: runtimeDiagnostics.osVersion,
-        osBuild: runtimeDiagnostics.osBuild,
-        userAgent: runtimeDiagnostics.userAgent,
-      };
-      updateNodeData(newNodeId, {
-        generationJobId: jobId,
-        generationSourceType: 'imageEdit',
-        generationProviderId: selectedModel.providerId,
-        generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
-        generationDebugContext,
-      });
-    } catch (generationError) {
-      const resolvedError = resolveErrorContent(generationError, t('ai.error'));
-      const generationDebugContext: GenerationDebugContext = {
-        sourceType: 'imageEdit',
-        providerId: selectedModel.providerId,
-        requestModel: requestResolution.requestModel,
-        requestSize: selectedResolution.value,
-        requestAspectRatio: selectedAspectRatio.value,
-        prompt,
-        extraParams: effectiveExtraParams,
-        referenceImageCount: incomingImages.length,
-        referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length),
-        appVersion: runtimeDiagnostics.appVersion,
-        osName: runtimeDiagnostics.osName,
-        osVersion: runtimeDiagnostics.osVersion,
-        osBuild: runtimeDiagnostics.osBuild,
-        userAgent: runtimeDiagnostics.userAgent,
-      };
-      const reportText = buildGenerationErrorReport({
-        errorMessage: resolvedError.message,
-        errorDetails: resolvedError.details,
-        context: generationDebugContext,
-      });
-      setError(resolvedError.message);
-      void showErrorDialog(
-        resolvedError.message,
-        t('common.error'),
-        resolvedError.details,
-        reportText
-      );
-      updateNodeData(newNodeId, {
-        isGenerating: false,
-        generationStartedAt: null,
-        generationJobId: null,
-        generationProviderId: null,
-        generationClientSessionId: null,
-        generationError: resolvedError.message,
-        generationErrorDetails: resolvedError.details ?? null,
-        generationDebugContext,
-      });
+        const jobId = await canvasAiGateway.submitGenerateImageJob({
+          prompt,
+          model: requestResolution.requestModel,
+          size: selectedResolution.value,
+          aspectRatio: resolvedRequestAspectRatio,
+          referenceImages: incomingImages,
+          extraParams: effectiveExtraParams,
+        });
+        const generationDebugContext: GenerationDebugContext = {
+          sourceType: 'imageEdit',
+          providerId: selectedModel.providerId,
+          requestModel: requestResolution.requestModel,
+          requestSize: selectedResolution.value,
+          requestAspectRatio: resolvedRequestAspectRatio,
+          prompt,
+          extraParams: effectiveExtraParams,
+          referenceImageCount: incomingImages.length,
+          referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length),
+          appVersion: runtimeDiagnostics.appVersion,
+          osName: runtimeDiagnostics.osName,
+          osVersion: runtimeDiagnostics.osVersion,
+          osBuild: runtimeDiagnostics.osBuild,
+          userAgent: runtimeDiagnostics.userAgent,
+        };
+        updateNodeData(newNodeId, {
+          generationJobId: jobId,
+          generationSourceType: 'imageEdit',
+          generationProviderId: selectedModel.providerId,
+          generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
+          generationStatus: 'queued',
+          generationAttemptCount: 0,
+          generationRetryLimit: 0,
+          generationDebugContext,
+        });
+      } catch (generationError) {
+        const resolvedError = resolveErrorContent(generationError, t('ai.error'));
+        const generationDebugContext: GenerationDebugContext = {
+          sourceType: 'imageEdit',
+          providerId: selectedModel.providerId,
+          requestModel: requestResolution.requestModel,
+          requestSize: selectedResolution.value,
+          requestAspectRatio: selectedAspectRatio.value,
+          prompt,
+          extraParams: effectiveExtraParams,
+          referenceImageCount: incomingImages.length,
+          referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length),
+          appVersion: runtimeDiagnostics.appVersion,
+          osName: runtimeDiagnostics.osName,
+          osVersion: runtimeDiagnostics.osVersion,
+          osBuild: runtimeDiagnostics.osBuild,
+          userAgent: runtimeDiagnostics.userAgent,
+        };
+        const reportText = buildGenerationErrorReport({
+          errorMessage: resolvedError.message,
+          errorDetails: resolvedError.details,
+          context: generationDebugContext,
+        });
+        setError(resolvedError.message);
+        void showErrorDialog(
+          resolvedError.message,
+          t('common.error'),
+          resolvedError.details,
+          reportText
+        );
+        updateNodeData(newNodeId, {
+          isGenerating: false,
+          generationStartedAt: null,
+          generationJobId: null,
+          generationProviderId: null,
+          generationClientSessionId: null,
+          generationStatus: null,
+          generationAttemptCount: 0,
+          generationRetryLimit: 0,
+          generationError: resolvedError.message,
+          generationErrorDetails: resolvedError.details ?? null,
+          generationDebugContext,
+        });
+      }
+    } finally {
+      generationSubmitLockRef.current = false;
+      setIsSubmittingGeneration(false);
     }
   }, [
     addNode,
@@ -860,6 +880,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
             event.stopPropagation();
             void handleGenerate();
           }}
+          disabled={isSubmittingGeneration}
           variant="primary"
           className={`shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
         >

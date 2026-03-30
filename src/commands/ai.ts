@@ -9,13 +9,21 @@ export interface GenerateRequest {
   extra_params?: Record<string, unknown>;
 }
 
-export type GenerationJobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'not_found';
+export type GenerationJobState =
+  | 'queued'
+  | 'running'
+  | 'retrying'
+  | 'succeeded'
+  | 'failed'
+  | 'not_found';
 
 export interface GenerationJobStatus {
   job_id: string;
   status: GenerationJobState;
   result?: string | null;
   error?: string | null;
+  attempt_count: number;
+  retry_limit: number;
 }
 
 const BASE64_PREVIEW_HEAD = 96;
@@ -119,6 +127,20 @@ export async function setApiKey(provider: string, apiKey: string): Promise<void>
     throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
   }
   return await invoke('set_api_key', { provider, apiKey });
+}
+
+export async function setQianhaiGenerationPolicy(
+  maxConcurrent: number,
+  retryLimit: number
+): Promise<void> {
+  if (!isTauri()) {
+    throw new Error('Current environment is not Tauri. Please run `npm run tauri dev`.');
+  }
+
+  return await invoke('set_qianhai_generation_policy', {
+    maxConcurrent,
+    retryLimit,
+  });
 }
 
 export async function generateImage(request: GenerateRequest): Promise<string> {

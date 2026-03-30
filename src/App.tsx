@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { invoke } from '@tauri-apps/api/core';
+import { setQianhaiGenerationPolicy } from './commands/ai';
 import { Canvas } from './features/canvas/Canvas';
 import { TitleBar } from './components/TitleBar';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -40,6 +41,11 @@ function App() {
   const uiRadiusPreset = useSettingsStore((state) => state.uiRadiusPreset);
   const themeTonePreset = useSettingsStore((state) => state.themeTonePreset);
   const accentColor = useSettingsStore((state) => state.accentColor);
+  const settingsHydrated = useSettingsStore((state) => state.isHydrated);
+  const qianhaiMaxConcurrentGenerations = useSettingsStore(
+    (state) => state.qianhaiMaxConcurrentGenerations
+  );
+  const qianhaiRetryLimit = useSettingsStore((state) => state.qianhaiRetryLimit);
   const autoCheckAppUpdateOnLaunch = useSettingsStore((state) => state.autoCheckAppUpdateOnLaunch);
   const enableUpdateDialog = useSettingsStore((state) => state.enableUpdateDialog);
   const setEnableUpdateDialog = useSettingsStore((state) => state.setEnableUpdateDialog);
@@ -141,6 +147,35 @@ function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!settingsHydrated) {
+      return;
+    }
+
+    let cancelled = false;
+    const syncQianhaiPolicy = async () => {
+      try {
+        await setQianhaiGenerationPolicy(
+          qianhaiMaxConcurrentGenerations,
+          qianhaiRetryLimit
+        );
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('failed to sync qianhai generation policy', error);
+        }
+      }
+    };
+
+    void syncQianhaiPolicy();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    qianhaiMaxConcurrentGenerations,
+    qianhaiRetryLimit,
+    settingsHydrated,
+  ]);
 
   useEffect(() => {
     if (!isHydrated) {

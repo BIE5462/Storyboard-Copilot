@@ -46,9 +46,11 @@ export interface AiGateway {
   submitGenerateImageJob: (payload: GenerateImagePayload) => Promise<string>;
   getGenerateImageJob: (jobId: string) => Promise<{
     job_id: string;
-    status: 'queued' | 'running' | 'succeeded' | 'failed' | 'not_found';
+    status: 'queued' | 'running' | 'retrying' | 'succeeded' | 'failed' | 'not_found';
     result?: string | null;
     error?: string | null;
+    attempt_count: number;
+    retry_limit: number;
   }>;
 }
 

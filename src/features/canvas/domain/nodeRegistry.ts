@@ -127,6 +127,12 @@ const exportImageNodeDefinition: CanvasNodeDefinition<ExportImageNodeData> = {
     aspectRatio: DEFAULT_ASPECT_RATIO,
     isSizeManuallyAdjusted: false,
     resultKind: 'generic',
+    isGenerating: false,
+    generationStartedAt: null,
+    generationDurationMs: 60000,
+    generationStatus: null,
+    generationAttemptCount: 0,
+    generationRetryLimit: 0,
   }),
 };
 
