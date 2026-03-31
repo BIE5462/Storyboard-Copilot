@@ -1,0 +1,1 @@
+任务完成前优先做轻量验证：TypeScript 改动运行 `npx tsc --noEmit`，Rust 改动运行 `cargo check`。至少手测 1 条主路径和 1 条异常路径，确认没有明显性能回退。涉及打包/入口/持久化/Tauri 命令时建议再做完整构建；正式发布前运行 `npm run build`，并确认 docs/releases/vx.y.z.md 与版本/tag 一致。

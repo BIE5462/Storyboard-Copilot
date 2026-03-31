@@ -1,0 +1,1 @@
+项目强调分层解耦、单一职责和可扩展性。节点类型、默认数据、菜单展示、连线能力统一在 src/features/canvas/domain/nodeRegistry.ts 中声明，禁止在 UI/Store 硬编码重复逻辑。UI 层优先复用统一组件和样式 token；节点控制条与工具条分别复用 nodeControlStyles.ts 和 nodeToolbarConfig.ts。Store 不承担重业务逻辑，业务逻辑放应用层。代码风格以 TypeScript 类型清晰、模块职责明确、小步改动为主；新增文案必须同步中英 i18n key。性能上避免拖拽时重计算/重持久化，优先使用 previewImageUrl 进行渲染，原图仅用于模型/工具处理。

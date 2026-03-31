@@ -1,0 +1,1 @@
+Windows 开发常用命令：`npm install` 安装依赖；`npm run dev` 启动前端开发；`npm run tauri dev` 进行 Tauri 联调；`npx tsc --noEmit` 做 TypeScript 类型检查；`cd src-tauri && cargo check` 做 Rust 快速检查；`npm run build` 做前端完整构建；`npm run tauri build` 构建桌面应用；`npm run release -- patch <notes>` 执行版本发布。Windows 常见命令可使用 `git status`、`git diff`、`Get-ChildItem`、`rg`/`rg --files`。
