@@ -952,7 +952,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       promptDirectives.push('禁止添加描述文本');
     }
     if (selectedModel.providerId === 'qianhai') {
-      promptDirectives.push('画面必须为规则四宫格构图，每格独立成画，分格边界清晰');
+      promptDirectives.push(`画面必须为规则${gridRows}×${gridCols}的${gridRows * gridCols}宫格构图，分格边界清晰`);
     }
     parts.push(`${promptDirectives.join('，')}。`);
 

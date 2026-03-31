@@ -13,7 +13,7 @@ export type CanvasEdgeRoutingMode = 'spline' | 'orthogonal' | 'smartOrthogonal';
 export type ProviderApiKeys = Record<string, string>;
 export const DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL = 'nano-banana-pro';
 // Keep in sync with src-tauri/src/commands/ai.rs qianhai scheduler defaults.
-export const DEFAULT_QIANHAI_MAX_CONCURRENT_GENERATIONS = 1;
+export const DEFAULT_QIANHAI_MAX_CONCURRENT_GENERATIONS = 3;
 export const DEFAULT_QIANHAI_RETRY_LIMIT = 1;
 
 interface SettingsState {
