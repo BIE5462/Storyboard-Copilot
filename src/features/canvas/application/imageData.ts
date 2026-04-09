@@ -138,6 +138,96 @@ export function resolveImageDisplayUrl(imageUrl: string): string {
   return convertFileSrc(imageUrl);
 }
 
+function normalizeImageSourceValue(imageUrl: string | null | undefined): string | null {
+  if (typeof imageUrl !== 'string') {
+    return null;
+  }
+
+  const trimmed = imageUrl.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function isDurableImageSource(imageUrl: string | null | undefined): boolean {
+  const normalized = normalizeImageSourceValue(imageUrl);
+  if (!normalized) {
+    return false;
+  }
+
+  const lower = normalized.toLowerCase();
+  return (
+    lower.startsWith('data:') ||
+    lower.startsWith('file://') ||
+    isLikelyLocalImagePath(normalized)
+  );
+}
+
+function appendUniqueImageSource(candidates: string[], imageUrl: string | null): void {
+  if (!imageUrl || candidates.includes(imageUrl)) {
+    return;
+  }
+  candidates.push(imageUrl);
+}
+
+function buildPrioritizedImageSources(
+  imageUrl: string | null | undefined,
+  previewImageUrl: string | null | undefined,
+  preferOriginal: boolean
+): string[] {
+  const normalizedImageUrl = normalizeImageSourceValue(imageUrl);
+  const normalizedPreviewImageUrl = normalizeImageSourceValue(previewImageUrl);
+  const durableImageUrl = isDurableImageSource(normalizedImageUrl) ? normalizedImageUrl : null;
+  const durablePreviewImageUrl = isDurableImageSource(normalizedPreviewImageUrl)
+    ? normalizedPreviewImageUrl
+    : null;
+  const candidates: string[] = [];
+
+  if (preferOriginal) {
+    appendUniqueImageSource(candidates, durableImageUrl);
+    appendUniqueImageSource(candidates, durablePreviewImageUrl);
+    appendUniqueImageSource(candidates, normalizedImageUrl);
+    appendUniqueImageSource(candidates, normalizedPreviewImageUrl);
+    return candidates;
+  }
+
+  appendUniqueImageSource(candidates, durablePreviewImageUrl);
+  appendUniqueImageSource(candidates, durableImageUrl);
+  appendUniqueImageSource(candidates, normalizedPreviewImageUrl);
+  appendUniqueImageSource(candidates, normalizedImageUrl);
+  return candidates;
+}
+
+export function hasAvailableImageSource(
+  imageUrl: string | null | undefined,
+  previewImageUrl?: string | null | undefined
+): boolean {
+  return buildPrioritizedImageSources(imageUrl, previewImageUrl, true).length > 0;
+}
+
+export function resolveActionImageSource(
+  imageUrl: string | null | undefined,
+  previewImageUrl?: string | null | undefined
+): string | null {
+  return buildPrioritizedImageSources(imageUrl, previewImageUrl, true)[0] ?? null;
+}
+
+export function resolveViewerImageSource(
+  imageUrl: string | null | undefined,
+  previewImageUrl?: string | null | undefined
+): string | null {
+  const picked = buildPrioritizedImageSources(imageUrl, previewImageUrl, true)[0] ?? null;
+  return picked ? resolveImageDisplayUrl(picked) : null;
+}
+
+export function resolveDisplayImageSource(
+  imageUrl: string | null | undefined,
+  previewImageUrl: string | null | undefined,
+  zoom: number
+): string | null {
+  const preferOriginal = shouldUseOriginalImageByZoom(zoom);
+  const picked = buildPrioritizedImageSources(imageUrl, previewImageUrl, preferOriginal)[0] ?? null;
+  return picked ? resolveImageDisplayUrl(picked) : null;
+}
+
 export async function persistImageLocally(source: string): Promise<string> {
   if (isLikelyLocalImagePath(source)) {
     return source;

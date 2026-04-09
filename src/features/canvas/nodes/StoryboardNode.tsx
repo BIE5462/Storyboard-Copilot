@@ -43,12 +43,14 @@ import {
 import { EXPORT_RESULT_DISPLAY_NAME, resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import {
   canvasToDataUrl,
+  hasAvailableImageSource,
   loadImageElement,
   prepareNodeImage,
   persistImageLocally,
   reduceAspectRatio,
-  resolveImageDisplayUrl,
-  shouldUseOriginalImageByZoom,
+  resolveActionImageSource,
+  resolveDisplayImageSource,
+  resolveViewerImageSource,
 } from '@/features/canvas/application/imageData';
 import { UiButton, UiCheckbox, UiChipButton, UiInput, UiPanel, UiSelect } from '@/components/ui';
 import {
@@ -285,6 +287,7 @@ interface IncomingImageItem {
   imageUrl: string;
   previewImageUrl: string | null;
   displayUrl: string;
+  viewerSourceUrl: string;
   label: string;
 }
 
@@ -311,17 +314,15 @@ const FrameCard = memo(
     const updateStoryboardFrame = useCanvasStore((state) => state.updateStoryboardFrame);
     const { zoom } = useViewport();
 
-    const imageSource = useMemo(() => {
-      const preferOriginal = shouldUseOriginalImageByZoom(zoom);
-      const picked = preferOriginal
-        ? frame.imageUrl || frame.previewImageUrl
-        : frame.previewImageUrl || frame.imageUrl;
-      return picked ? resolveImageDisplayUrl(picked) : null;
-    }, [frame.imageUrl, frame.previewImageUrl, zoom]);
-    const viewerSource = useMemo(() => {
-      const picked = frame.imageUrl || frame.previewImageUrl;
-      return picked ? resolveImageDisplayUrl(picked) : null;
-    }, [frame.imageUrl, frame.previewImageUrl]);
+    const imageSource = useMemo(
+      () => resolveDisplayImageSource(frame.imageUrl, frame.previewImageUrl, zoom),
+      [frame.imageUrl, frame.previewImageUrl, zoom]
+    );
+    const viewerSource = useMemo(
+      () => resolveViewerImageSource(frame.imageUrl, frame.previewImageUrl),
+      [frame.imageUrl, frame.previewImageUrl]
+    );
+    const hasImageSource = hasAvailableImageSource(frame.imageUrl, frame.previewImageUrl);
 
     const dragging = draggedFrameId === frame.id;
     const asDropTarget = dropTargetFrameId === frame.id && !dragging;
@@ -356,7 +357,7 @@ const FrameCard = memo(
             onSortStart(frame.id);
           }}
         >
-          {frame.imageUrl ? (
+          {hasImageSource ? (
             <CanvasNodeImage
               src={imageSource ?? ''}
               alt={`Frame ${index + 1}`}
@@ -504,7 +505,10 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
       if (!isUploadNode(sourceNode) && !isImageEditNode(sourceNode) && !isExportImageNode(sourceNode)) {
         continue;
       }
-      const imageUrl = sourceNode.data.imageUrl;
+      const imageUrl = resolveActionImageSource(
+        sourceNode.data.imageUrl,
+        sourceNode.data.previewImageUrl
+      );
       if (!imageUrl) {
         continue;
       }
@@ -521,26 +525,32 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
 
   const incomingImageItems = useMemo<IncomingImageItem[]>(
     () =>
-      incomingImageRefs.map((item, index) => ({
-        imageUrl: item.imageUrl,
-        previewImageUrl: item.previewImageUrl,
-        displayUrl: resolveImageDisplayUrl(item.previewImageUrl || item.imageUrl),
-        label: `图${index + 1}`,
-      })),
+      incomingImageRefs.map((item, index) => {
+        const displayUrl =
+          resolveDisplayImageSource(item.imageUrl, item.previewImageUrl, 1)
+          ?? resolveViewerImageSource(item.imageUrl, item.previewImageUrl)
+          ?? '';
+        const viewerSourceUrl =
+          resolveViewerImageSource(item.imageUrl, item.previewImageUrl) ?? displayUrl;
+        return {
+          imageUrl: item.imageUrl,
+          previewImageUrl: item.previewImageUrl,
+          displayUrl,
+          viewerSourceUrl,
+          label: `图${index + 1}`,
+        };
+      }),
     [incomingImageRefs]
   );
   const frameViewerImageList = useMemo(
     () =>
       orderedFrames
-        .map((frame) => {
-          const source = frame.imageUrl || frame.previewImageUrl;
-          return source ? resolveImageDisplayUrl(source) : null;
-        })
+        .map((frame) => resolveViewerImageSource(frame.imageUrl, frame.previewImageUrl))
         .filter((item): item is string => Boolean(item)),
     [orderedFrames]
   );
   const incomingImageViewerList = useMemo(
-    () => incomingImageItems.map((item) => resolveImageDisplayUrl(item.imageUrl)),
+    () => incomingImageItems.map((item) => item.viewerSourceUrl),
     [incomingImageItems]
   );
 
@@ -672,7 +682,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
   const handleEditFrame = useCallback(
     async (frame: StoryboardFrameItem) => {
       try {
-        const sourceImage = frame.imageUrl ?? frame.previewImageUrl;
+        const sourceImage = resolveActionImageSource(frame.imageUrl, frame.previewImageUrl);
         if (!sourceImage) {
           setExportError('该分镜没有可编辑图片');
           return;
@@ -725,7 +735,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
     try {
       const stageFrameStart = performance.now();
       const frameSources = orderedFrames.map(
-        (frame) => frame.imageUrl ?? frame.previewImageUrl ?? ''
+        (frame) => resolveActionImageSource(frame.imageUrl, frame.previewImageUrl) ?? ''
       );
       if (frameSources.every((source) => !source)) {
         throw new Error('没有可导出的图片');
@@ -918,7 +928,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
     try {
       const frameEntries = orderedFrames
         .map((frame, index) => ({
-          source: frame.imageUrl ?? frame.previewImageUrl ?? '',
+          source: resolveActionImageSource(frame.imageUrl, frame.previewImageUrl) ?? '',
           index,
           note: frame.note ?? '',
         }))
@@ -1098,7 +1108,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                     <CanvasNodeImage
                       src={item.displayUrl}
                       alt={item.label}
-                      viewerSourceUrl={resolveImageDisplayUrl(item.imageUrl)}
+                      viewerSourceUrl={item.viewerSourceUrl}
                       viewerImageList={incomingImageViewerList}
                       className="h-8 w-8 rounded object-cover"
                       draggable={false}

@@ -24,8 +24,9 @@ import {
   resolveResizeMinConstraintsByAspect,
 } from '@/features/canvas/application/imageNodeSizing';
 import {
-  resolveImageDisplayUrl,
-  shouldUseOriginalImageByZoom,
+  hasAvailableImageSource,
+  resolveDisplayImageSource,
+  resolveViewerImageSource,
 } from '@/features/canvas/application/imageData';
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
@@ -60,7 +61,10 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
       ? ((data as { generationError?: string }).generationError ?? '').trim()
       : '';
   const hasGenerationError =
-    isExportResultNode && !isGenerating && !data.imageUrl && generationError.length > 0;
+    isExportResultNode
+    && !isGenerating
+    && !hasAvailableImageSource(data.imageUrl, data.previewImageUrl)
+    && generationError.length > 0;
   const generationStartedAt =
     typeof data.generationStartedAt === 'number' ? data.generationStartedAt : null;
   const generationDurationMs =
@@ -166,18 +170,14 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
   }, [generationAttemptCount, generationStatus, isExportResultNode, isGenerating, t, waitedMinutes]);
 
   const imageSource = useMemo(() => {
-    const preferOriginal = shouldUseOriginalImageByZoom(zoom);
-    const picked = preferOriginal
-      ? data.imageUrl || data.previewImageUrl
-      : data.previewImageUrl || data.imageUrl;
-    return picked ? resolveImageDisplayUrl(picked) : null;
+    return resolveDisplayImageSource(data.imageUrl, data.previewImageUrl, zoom);
   }, [data.imageUrl, data.previewImageUrl, zoom]);
 
-  // 获取原图 URL 用于查看器
-  const originalImageUrl = useMemo(() => {
-    if (!data.imageUrl) return null;
-    return resolveImageDisplayUrl(data.imageUrl);
-  }, [data.imageUrl]);
+  const viewerImageUrl = useMemo(
+    () => resolveViewerImageSource(data.imageUrl, data.previewImageUrl),
+    [data.imageUrl, data.previewImageUrl]
+  );
+  const hasImageSource = hasAvailableImageSource(data.imageUrl, data.previewImageUrl);
 
   return (
     <div
@@ -208,11 +208,11 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
       <div
         className={`relative h-full w-full overflow-hidden rounded-[var(--node-radius)] ${hasGenerationError ? 'bg-[rgba(127,29,29,0.2)]' : 'bg-bg-dark'}`}
       >
-        {data.imageUrl ? (
+        {hasImageSource ? (
           <CanvasNodeImage
             src={imageSource ?? ''}
             alt={isExportResultNode ? t('node.imageNode.resultAlt') : t('node.imageNode.generatedAlt')}
-            viewerSourceUrl={originalImageUrl}
+            viewerSourceUrl={viewerImageUrl}
             className="h-full w-full object-contain"
           />
         ) : hasGenerationError ? (

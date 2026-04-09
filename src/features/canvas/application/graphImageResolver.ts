@@ -6,6 +6,7 @@ import {
   type CanvasNode,
 } from '../domain/canvasNodes';
 import type { GraphImageResolver } from './ports';
+import { resolveActionImageSource } from './imageData';
 
 export class DefaultGraphImageResolver implements GraphImageResolver {
   collectInputImages(nodeId: string, nodes: CanvasNode[], edges: CanvasEdge[]): string[] {
@@ -27,7 +28,8 @@ export class DefaultGraphImageResolver implements GraphImageResolver {
     }
 
     if (isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node)) {
-      return node.data.imageUrl ? [node.data.imageUrl] : [];
+      const imageSource = resolveActionImageSource(node.data.imageUrl, node.data.previewImageUrl);
+      return imageSource ? [imageSource] : [];
     }
 
     return [];

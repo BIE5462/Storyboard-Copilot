@@ -30,6 +30,10 @@ import { UI_POPOVER_TRANSITION_MS } from '@/components/ui/motion';
 import { sanitizeStoryboardText } from '@/features/canvas/application/storyboardText';
 import { buildGenerationErrorReport } from '@/features/canvas/application/generationErrorReport';
 import {
+  hasAvailableImageSource,
+  resolveActionImageSource,
+} from '@/features/canvas/application/imageData';
+import {
   NODE_TOOLBAR_ALIGN,
   NODE_TOOLBAR_CLASS,
   NODE_TOOLBAR_OFFSET,
@@ -59,7 +63,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
   const tools = useMemo(() => getNodeToolPlugins(node), [node]);
   const deleteNode = useCanvasStore((state) => state.deleteNode);
   const ungroupNode = useCanvasStore((state) => state.ungroupNode);
-  const canReupload = isUploadNode(node) && Boolean(node.data.imageUrl);
+  const canReupload = isUploadNode(node) && hasAvailableImageSource(node.data.imageUrl, node.data.previewImageUrl);
   const downloadPresetPaths = useSettingsStore((state) => state.downloadPresetPaths);
   const ignoreAtTagWhenCopyingAndGenerating = useSettingsStore(
     (state) => state.ignoreAtTagWhenCopyingAndGenerating
@@ -76,7 +80,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
   const downloadMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const imageSource = useMemo(() => {
     if (isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node)) {
-      return node.data.imageUrl || node.data.previewImageUrl || null;
+      return resolveActionImageSource(node.data.imageUrl, node.data.previewImageUrl);
     }
     return null;
   }, [node]);

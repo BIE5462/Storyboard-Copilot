@@ -37,9 +37,10 @@ import { canvasEventBus } from '@/features/canvas/application/canvasServices';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import {
+  hasAvailableImageSource,
   prepareNodeImageFromFile,
-  resolveImageDisplayUrl,
-  shouldUseOriginalImageByZoom,
+  resolveDisplayImageSource,
+  resolveViewerImageSource,
 } from '@/features/canvas/application/imageData';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -278,10 +279,10 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
 
   const handleNodeClick = useCallback(() => {
     setSelectedNode(id);
-    if (!data.imageUrl && !transientPreviewUrl) {
+    if (!hasAvailableImageSource(data.imageUrl, data.previewImageUrl) && !transientPreviewUrl) {
       inputRef.current?.click();
     }
-  }, [data.imageUrl, id, setSelectedNode, transientPreviewUrl]);
+  }, [data.imageUrl, data.previewImageUrl, id, setSelectedNode, transientPreviewUrl]);
 
   useEffect(() => () => {
     uploadPerfRef.current = null;
@@ -292,12 +293,13 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
     if (transientPreviewUrl) {
       return transientPreviewUrl;
     }
-    const preferOriginal = shouldUseOriginalImageByZoom(zoom);
-    const picked = preferOriginal
-      ? data.imageUrl || data.previewImageUrl
-      : data.previewImageUrl || data.imageUrl;
-    return picked ? resolveImageDisplayUrl(picked) : null;
+    return resolveDisplayImageSource(data.imageUrl, data.previewImageUrl, zoom);
   }, [data.imageUrl, data.previewImageUrl, transientPreviewUrl, zoom]);
+  const viewerImageUrl = useMemo(
+    () => resolveViewerImageSource(data.imageUrl, data.previewImageUrl),
+    [data.imageUrl, data.previewImageUrl]
+  );
+  const hasStableImageSource = hasAvailableImageSource(data.imageUrl, data.previewImageUrl);
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -324,13 +326,13 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
         onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
       />
 
-      {data.imageUrl || transientPreviewUrl ? (
+      {hasStableImageSource || transientPreviewUrl ? (
         <div
           className="block h-full w-full overflow-hidden rounded-[var(--node-radius)] bg-bg-dark"
         >
           <CanvasNodeImage
             src={imageSource ?? ''}
-            viewerSourceUrl={data.imageUrl ? resolveImageDisplayUrl(data.imageUrl) : null}
+            viewerSourceUrl={viewerImageUrl}
             alt={t('node.upload.uploadedAlt')}
             className="h-full w-full object-contain"
             onLoad={handleImageLoad}
