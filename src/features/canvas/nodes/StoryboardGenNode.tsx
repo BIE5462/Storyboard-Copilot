@@ -32,6 +32,10 @@ import {
 } from '@/features/canvas/application/canvasServices';
 import { resolveErrorContent, showErrorDialog } from '@/features/canvas/application/errorDialog';
 import {
+  deriveAspectRatioFromSize,
+  resolveGenerationSizeDimensions,
+} from '@/features/canvas/application/generationSize';
+import {
   detectAspectRatio,
   parseAspectRatio,
   resolveImageDisplayUrl,
@@ -63,6 +67,15 @@ import {
 import { GRSAI_NANO_BANANA_PRO_MODEL_ID } from '@/features/canvas/models/image/grsai/nanoBananaPro';
 import { FAL_NANO_BANANA_2_MODEL_ID } from '@/features/canvas/models/image/fal/nanoBanana2';
 import { KIE_NANO_BANANA_2_MODEL_ID } from '@/features/canvas/models/image/kie/nanoBanana2';
+import {
+  getProviderApiKeyForModel,
+  getProviderCredentialKeyForModel,
+  getProviderRouteForCredentialKey,
+} from '@/features/canvas/models/runtime';
+import {
+  attachConfiguredQianhaiModelName,
+  resolveConfiguredQianhaiRequestModelName,
+} from '@/features/canvas/models/image/qianhai/runtime';
 import { resolveModelPriceDisplay } from '@/features/canvas/pricing';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
@@ -455,19 +468,6 @@ function toCssAspectRatio(aspectRatio: string): string {
 }
 
 /**
- * 将 ImageSize 解析为像素宽度
- */
-function resolveSizeToPixels(size: string): number {
-  const sizeMap: Record<string, number> = {
-    '0.5K': 512,
-    '1K': 1024,
-    '2K': 2048,
-    '4K': 4096,
-  };
-  return sizeMap[size] ?? 1024;
-}
-
-/**
  * 生成网格图片的 dataURL
  * 根据用户设置的分辨率、行列数和比例生成白底黑线的网格图
  * 用于帮助 API 更好地生成分镜
@@ -479,17 +479,10 @@ function generateGridImageDataUrl(
   resolution: string,
   lineThicknessPercent: number = GRID_LINE_THICKNESS_PERCENT
 ): string {
-  const [ratioW = '16', ratioH = '9'] = aspectRatio.split(':');
-  const ratioWNum = parseFloat(ratioW);
-  const ratioHNum = parseFloat(ratioH);
-
-  // 根据分辨率计算画布的总像素尺寸
-  const totalPixels = resolveSizeToPixels(resolution);
-
-  // 根据比例计算画布的实际宽高
-  // 宽度 = 总像素，高度根据比例计算
-  const canvasWidth = totalPixels;
-  const canvasHeight = Math.round(totalPixels * (ratioHNum / ratioWNum));
+  const { width: canvasWidth, height: canvasHeight } = resolveGenerationSizeDimensions(
+    resolution,
+    aspectRatio
+  );
   const thickness = Math.max(
     1,
     Math.round((Math.min(canvasWidth, canvasHeight) * lineThicknessPercent) / 100)
@@ -550,6 +543,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const addEdge = useCanvasStore((state) => state.addEdge);
   const findNodePosition = useCanvasStore((state) => state.findNodePosition);
   const apiKeys = useSettingsStore((state) => state.apiKeys);
+  const qianhaiGrokModelName = useSettingsStore((state) => state.qianhaiGrokModelName);
   const grsaiNanoBananaProModel = useSettingsStore((state) => state.grsaiNanoBananaProModel);
   const storyboardGenKeepStyleConsistent = useSettingsStore(
     (state) => state.storyboardGenKeepStyleConsistent
@@ -623,15 +617,35 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     const modelId = nodeData.model ?? DEFAULT_IMAGE_MODEL_ID;
     return getImageModel(modelId);
   }, [nodeData.model]);
-  const providerApiKey = apiKeys[selectedModel.providerId] ?? '';
+  const providerCredentialKey = useMemo(
+    () => getProviderCredentialKeyForModel(selectedModel.id, selectedModel.providerId),
+    [selectedModel.id, selectedModel.providerId]
+  );
+  const providerRoute = useMemo(
+    () => getProviderRouteForCredentialKey(providerCredentialKey, selectedModel.providerId),
+    [providerCredentialKey, selectedModel.providerId]
+  );
+  const providerApiKey = useMemo(
+    () => getProviderApiKeyForModel(apiKeys, selectedModel.id, selectedModel.providerId).trim(),
+    [apiKeys, selectedModel.id, selectedModel.providerId]
+  );
+  const configuredRequestModelName = useMemo(
+    () => resolveConfiguredQianhaiRequestModelName(selectedModel.id, qianhaiGrokModelName),
+    [qianhaiGrokModelName, selectedModel.id]
+  );
   const effectiveExtraParams = useMemo(
-    () => ({
-      ...(nodeData.extraParams ?? {}),
-      ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-        ? { grsai_pro_model: grsaiNanoBananaProModel }
-        : {}),
-    }),
-    [grsaiNanoBananaProModel, nodeData.extraParams, selectedModel.id]
+    () =>
+      attachConfiguredQianhaiModelName(
+        {
+          ...(nodeData.extraParams ?? {}),
+          ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
+            ? { grsai_pro_model: grsaiNanoBananaProModel }
+            : {}),
+        },
+        selectedModel.id,
+        qianhaiGrokModelName
+      ),
+    [grsaiNanoBananaProModel, nodeData.extraParams, qianhaiGrokModelName, selectedModel.id]
   );
   const resolutionOptions = useMemo(
     () => resolveImageModelResolutions(selectedModel, { extraParams: effectiveExtraParams }),
@@ -643,6 +657,11 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       extraParams: effectiveExtraParams,
     });
   }, [effectiveExtraParams, nodeData.size, selectedModel]);
+  const isSizeOnlyResolutionModel = selectedModel.resolutionControlMode === 'sizeOnly';
+  const derivedRequestAspectRatioValue = useMemo(
+    () => deriveAspectRatioFromSize(selectedResolution.value) ?? selectedModel.defaultAspectRatio,
+    [selectedModel.defaultAspectRatio, selectedResolution.value]
+  );
 
   const aspectRatioOptions = useMemo<AspectRatioChoice[]>(
     () => [AUTO_ASPECT_RATIO_OPTION, ...selectedModel.aspectRatios],
@@ -654,16 +673,34 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     const found = nodeAspectRatio ? aspectRatioOptions.find((item) => item.value === nodeAspectRatio) : undefined;
     return found ?? AUTO_ASPECT_RATIO_OPTION;
   }, [aspectRatioOptions, nodeData.requestAspectRatio]);
+  const effectiveSelectedAspectRatio = useMemo<AspectRatioChoice>(
+    () =>
+      isSizeOnlyResolutionModel
+        ? {
+            value: derivedRequestAspectRatioValue,
+            label: derivedRequestAspectRatioValue,
+          }
+        : selectedAspectRatio,
+    [derivedRequestAspectRatioValue, isSizeOnlyResolutionModel, selectedAspectRatio]
+  );
 
   const ratioControlMode: StoryboardRatioControlMode = showStoryboardGenAdvancedRatioControls
     ? (nodeData.ratioControlMode === 'overall' ? 'overall' : 'cell')
     : 'cell';
   const controlAspectRatioValue = useMemo(() => {
+    if (isSizeOnlyResolutionModel) {
+      return nodeData.aspectRatio || derivedRequestAspectRatioValue;
+    }
     if (selectedAspectRatio.value === AUTO_REQUEST_ASPECT_RATIO) {
       return nodeData.aspectRatio || DEFAULT_ASPECT_RATIO;
     }
     return selectedAspectRatio.value || DEFAULT_ASPECT_RATIO;
-  }, [nodeData.aspectRatio, selectedAspectRatio.value]);
+  }, [
+    derivedRequestAspectRatioValue,
+    isSizeOnlyResolutionModel,
+    nodeData.aspectRatio,
+    selectedAspectRatio.value,
+  ]);
   const resolvedAspectRatios = useMemo(
     () => resolveStoryboardAspectRatios(
       ratioControlMode,
@@ -794,6 +831,10 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       ),
     [resolvedAspectRatios.overallRatioValue, supportedAspectRatioValues]
   );
+  const shouldAttachGridReferenceImage = useMemo(
+    () => selectedModel.providerId !== 'qianhai' || providerCredentialKey !== 'qianhai',
+    [providerCredentialKey, selectedModel.providerId]
+  );
 
   const totalFrames = useMemo(
     () => (nodeData.gridRows ?? 1) * (nodeData.gridCols ?? 1),
@@ -867,15 +908,15 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       updateNodeData(id, { size: selectedResolution.value as ImageSize });
     }
 
-    if (nodeData.requestAspectRatio !== selectedAspectRatio.value) {
-      updateNodeData(id, { requestAspectRatio: selectedAspectRatio.value });
+    if (nodeData.requestAspectRatio !== effectiveSelectedAspectRatio.value) {
+      updateNodeData(id, { requestAspectRatio: effectiveSelectedAspectRatio.value });
     }
   }, [
+    effectiveSelectedAspectRatio.value,
     id,
     nodeData,
     selectedModel.id,
     selectedResolution.value,
-    selectedAspectRatio.value,
     updateNodeData,
   ]);
 
@@ -979,6 +1020,10 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   ]);
 
   const resolveEffectiveRequestAspectRatio = useCallback(async (): Promise<string> => {
+    if (isSizeOnlyResolutionModel) {
+      return derivedRequestAspectRatioValue;
+    }
+
     const safeRows = Math.max(1, nodeData.gridRows);
     const safeCols = Math.max(1, nodeData.gridCols);
     if (selectedAspectRatio.value !== AUTO_REQUEST_ASPECT_RATIO) {
@@ -1006,7 +1051,9 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       supportedAspectRatioValues
     );
   }, [
+    derivedRequestAspectRatioValue,
     incomingImages,
+    isSizeOnlyResolutionModel,
     mappedOverallRequestAspectRatio,
     nodeData.gridCols,
     nodeData.gridRows,
@@ -1068,22 +1115,51 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
 
       const prompt = buildPrompt();
       if (!prompt) {
-        const errorMessage = '请填写至少一个分镜内容描述';
+        const errorMessage = t('node.storyboardGen.frameDescriptionRequired');
         setError(errorMessage);
-        void showErrorDialog(errorMessage, '错误');
+        void showErrorDialog(errorMessage, t('common.error'));
         return;
       }
 
       if (!providerApiKey) {
-        const errorMessage = '请在设置中填写 API Key';
+        const errorMessage =
+          providerCredentialKey === selectedModel.providerId
+            ? t('node.imageEdit.apiKeyRequired')
+            : t('node.imageEdit.subProviderApiKeyRequired', {
+                model: selectedModel.displayName,
+              });
         setError(errorMessage);
-        void showErrorDialog(errorMessage, '错误');
+        void showErrorDialog(errorMessage, t('common.error'));
         return;
       }
 
-      const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
-      const generationStartedAt = Date.now();
-      const runtimeDiagnostics = await getRuntimeDiagnostics();
+      if (providerCredentialKey !== selectedModel.providerId && !configuredRequestModelName) {
+        const errorMessage = t('node.imageEdit.modelNameRequired', {
+          model: selectedModel.displayName,
+        });
+        setError(errorMessage);
+      void showErrorDialog(errorMessage, t('common.error'));
+      return;
+    }
+
+    const attachedReferenceImageCount =
+      incomingImages.length + (shouldAttachGridReferenceImage ? 1 : 0);
+    if (
+      !previewGridOnly &&
+      typeof selectedModel.maxReferenceImages === 'number' &&
+      attachedReferenceImageCount > selectedModel.maxReferenceImages
+    ) {
+      const errorMessage = t('node.storyboardGen.referenceImagesLimitExceeded', {
+        count: selectedModel.maxReferenceImages,
+      });
+      setError(errorMessage);
+      void showErrorDialog(errorMessage, t('common.error'));
+      return;
+    }
+
+    const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
+    const generationStartedAt = Date.now();
+    const runtimeDiagnostics = await getRuntimeDiagnostics();
 
       // Create new image node with generating state immediately
       // Use auto-positioning to avoid collisions with existing nodes
@@ -1115,7 +1191,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       setError(null);
 
       try {
-        await canvasAiGateway.setApiKey(selectedModel.providerId, providerApiKey);
+        await canvasAiGateway.setApiKey(providerRoute, providerApiKey);
 
         // 生成网格图片作为最后一张参考图片
         const gridImageDataUrl = generateGridImageDataUrl(
@@ -1126,7 +1202,6 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         );
 
         // 将网格图片作为最后一张参考图片
-        const shouldAttachGridReferenceImage = selectedModel.providerId !== 'qianhai';
         const allReferenceImages = shouldAttachGridReferenceImage
           ? [...incomingImages, gridImageDataUrl]
           : [...incomingImages];
@@ -1166,6 +1241,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
           generationJobId: jobId,
           generationSourceType: 'storyboardGen',
           generationProviderId: selectedModel.providerId,
+          generationCredentialKey: providerCredentialKey,
           generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
           generationStatus: 'queued',
           generationAttemptCount: 0,
@@ -1178,7 +1254,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
           },
         });
       } catch (generationError) {
-        const resolvedError = resolveErrorContent(generationError, '生成失败');
+        const resolvedError = resolveErrorContent(generationError, t('ai.error'));
         const generationDebugContext: GenerationDebugContext = {
           sourceType: 'storyboardGen',
           providerId: selectedModel.providerId,
@@ -1187,8 +1263,8 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
           requestAspectRatio: resolvedRequestAspectRatio,
           prompt,
           extraParams: effectiveExtraParams,
-          referenceImageCount: incomingImages.length + 1,
-          referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length + 1),
+          referenceImageCount: attachedReferenceImageCount,
+          referenceImagePlaceholders: createReferenceImagePlaceholders(attachedReferenceImageCount),
           appVersion: runtimeDiagnostics.appVersion,
           osName: runtimeDiagnostics.osName,
           osVersion: runtimeDiagnostics.osVersion,
@@ -1201,13 +1277,19 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
           context: generationDebugContext,
         });
         setError(resolvedError.message);
-        void showErrorDialog(resolvedError.message, '错误', resolvedError.details, reportText);
+        void showErrorDialog(
+          resolvedError.message,
+          t('common.error'),
+          resolvedError.details,
+          reportText
+        );
         // Clear generating state and mark as failed
         updateNodeData(newNodeId, {
           isGenerating: false,
           generationStartedAt: null,
           generationJobId: null,
           generationProviderId: null,
+          generationCredentialKey: null,
           generationClientSessionId: null,
           generationStatus: null,
           generationAttemptCount: 0,
@@ -1226,6 +1308,9 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     }
   }, [
     providerApiKey,
+    providerCredentialKey,
+    providerRoute,
+    configuredRequestModelName,
     nodeData,
     incomingImages,
     requestResolution.requestModel,
@@ -1651,7 +1736,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
           selectedModel={selectedModel}
           resolutionOptions={resolutionOptions}
           selectedResolution={selectedResolution}
-          selectedAspectRatio={selectedAspectRatio}
+          selectedAspectRatio={effectiveSelectedAspectRatio}
           aspectRatioOptions={aspectRatioOptions}
           onModelChange={(modelId) => updateNodeData(id, { model: modelId })}
           onResolutionChange={(resolution) =>

@@ -20,7 +20,7 @@ export const EXPORT_RESULT_NODE_LAYOUT_HEIGHT = 288;
 export const EXPORT_RESULT_NODE_MIN_WIDTH = 168;
 export const EXPORT_RESULT_NODE_MIN_HEIGHT = 168;
 
-export const IMAGE_SIZES = ['0.5K', '1K', '2K', '4K'] as const;
+export const IMAGE_SIZES = ['0.5K', '1K', '2K', '4K', '1024x1024', '1024*1024'] as const;
 export const IMAGE_ASPECT_RATIOS = [
   '1:1',
   '16:9',
@@ -30,7 +30,7 @@ export const IMAGE_ASPECT_RATIOS = [
   '21:9',
 ] as const;
 
-export type ImageSize = (typeof IMAGE_SIZES)[number];
+export type ImageSize = string;
 
 export interface NodeDisplayData {
   displayName?: string;
@@ -62,6 +62,7 @@ export interface ExportImageNodeData extends NodeImageData {
   isGenerating?: boolean;
   generationStartedAt?: number | null;
   generationDurationMs?: number;
+  generationCredentialKey?: string | null;
   generationStatus?: GenerationJobProgressState | null;
   generationAttemptCount?: number;
   generationRetryLimit?: number;
@@ -86,6 +87,7 @@ export interface ImageEditNodeData extends NodeImageData {
   isGenerating?: boolean;
   generationStartedAt?: number | null;
   generationDurationMs?: number;
+  generationCredentialKey?: string | null;
 }
 
 export interface StoryboardFrameItem {
@@ -145,6 +147,7 @@ export interface StoryboardGenNodeData {
   isGenerating?: boolean;
   generationStartedAt?: number | null;
   generationDurationMs?: number;
+  generationCredentialKey?: string | null;
   [key: string]: unknown;
 }
 

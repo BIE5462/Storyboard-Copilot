@@ -45,7 +45,7 @@ pub trait AIProvider: Send + Sync {
         Vec::new()
     }
 
-    async fn set_api_key(&self, _api_key: String) -> Result<(), AIError> {
+    async fn set_api_key(&self, _provider: &str, _api_key: String) -> Result<(), AIError> {
         Err(AIError::Provider(format!(
             "Provider '{}' does not support API key configuration",
             self.name()

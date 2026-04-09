@@ -18,6 +18,8 @@ export interface ResolutionOption {
   label: string;
 }
 
+export type ResolutionControlMode = 'paired' | 'sizeOnly';
+
 export interface ImageModelRuntimeContext {
   extraParams?: Record<string, unknown>;
 }
@@ -50,7 +52,13 @@ export interface ImageModelDefinition {
   defaultResolution: string;
   aspectRatios: AspectRatioOption[];
   resolutions: ResolutionOption[];
+  resolutionControlMode?: ResolutionControlMode;
+  maxReferenceImages?: number;
   resolveResolutions?: (context: ImageModelRuntimeContext) => ResolutionOption[];
+  normalizeRequestedResolution?: (
+    requestedResolution: string,
+    context: ImageModelRuntimeContext
+  ) => string;
   extraParamsSchema?: ExtraParamDefinition[];
   defaultExtraParams?: Record<string, unknown>;
   pricing?: ModelPricingDefinition;

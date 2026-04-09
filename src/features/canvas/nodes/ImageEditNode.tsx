@@ -28,6 +28,7 @@ import {
   graphImageResolver,
 } from '@/features/canvas/application/canvasServices';
 import { resolveErrorContent, showErrorDialog } from '@/features/canvas/application/errorDialog';
+import { deriveAspectRatioFromSize } from '@/features/canvas/application/generationSize';
 import {
   detectAspectRatio,
   parseAspectRatio,
@@ -56,6 +57,15 @@ import {
 import { GRSAI_NANO_BANANA_PRO_MODEL_ID } from '@/features/canvas/models/image/grsai/nanoBananaPro';
 import { FAL_NANO_BANANA_2_MODEL_ID } from '@/features/canvas/models/image/fal/nanoBanana2';
 import { KIE_NANO_BANANA_2_MODEL_ID } from '@/features/canvas/models/image/kie/nanoBanana2';
+import {
+  getProviderApiKeyForModel,
+  getProviderCredentialKeyForModel,
+  getProviderRouteForCredentialKey,
+} from '@/features/canvas/models/runtime';
+import {
+  attachConfiguredQianhaiModelName,
+  resolveConfiguredQianhaiRequestModelName,
+} from '@/features/canvas/models/image/qianhai/runtime';
 import { resolveModelPriceDisplay } from '@/features/canvas/pricing';
 import {
   NODE_CONTROL_CHIP_CLASS,
@@ -249,6 +259,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const findNodePosition = useCanvasStore((state) => state.findNodePosition);
   const addEdge = useCanvasStore((state) => state.addEdge);
   const apiKeys = useSettingsStore((state) => state.apiKeys);
+  const qianhaiGrokModelName = useSettingsStore((state) => state.qianhaiGrokModelName);
   const grsaiNanoBananaProModel = useSettingsStore((state) => state.grsaiNanoBananaProModel);
   const showNodePrice = useSettingsStore((state) => state.showNodePrice);
   const priceDisplayCurrencyMode = useSettingsStore((state) => state.priceDisplayCurrencyMode);
@@ -281,15 +292,35 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     const modelId = data.model ?? DEFAULT_IMAGE_MODEL_ID;
     return getImageModel(modelId);
   }, [data.model]);
-  const providerApiKey = apiKeys[selectedModel.providerId] ?? '';
+  const providerCredentialKey = useMemo(
+    () => getProviderCredentialKeyForModel(selectedModel.id, selectedModel.providerId),
+    [selectedModel.id, selectedModel.providerId]
+  );
+  const providerRoute = useMemo(
+    () => getProviderRouteForCredentialKey(providerCredentialKey, selectedModel.providerId),
+    [providerCredentialKey, selectedModel.providerId]
+  );
+  const providerApiKey = useMemo(
+    () => getProviderApiKeyForModel(apiKeys, selectedModel.id, selectedModel.providerId).trim(),
+    [apiKeys, selectedModel.id, selectedModel.providerId]
+  );
+  const configuredRequestModelName = useMemo(
+    () => resolveConfiguredQianhaiRequestModelName(selectedModel.id, qianhaiGrokModelName),
+    [qianhaiGrokModelName, selectedModel.id]
+  );
   const effectiveExtraParams = useMemo(
-    () => ({
-      ...(data.extraParams ?? {}),
-      ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-        ? { grsai_pro_model: grsaiNanoBananaProModel }
-        : {}),
-    }),
-    [data.extraParams, grsaiNanoBananaProModel, selectedModel.id]
+    () =>
+      attachConfiguredQianhaiModelName(
+        {
+          ...(data.extraParams ?? {}),
+          ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
+            ? { grsai_pro_model: grsaiNanoBananaProModel }
+            : {}),
+        },
+        selectedModel.id,
+        qianhaiGrokModelName
+      ),
+    [data.extraParams, grsaiNanoBananaProModel, qianhaiGrokModelName, selectedModel.id]
   );
   const resolutionOptions = useMemo(
     () => resolveImageModelResolutions(selectedModel, { extraParams: effectiveExtraParams }),
@@ -299,6 +330,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const selectedResolution = useMemo(
     () => resolveImageModelResolution(selectedModel, data.size, { extraParams: effectiveExtraParams }),
     [data.size, effectiveExtraParams, selectedModel]
+  );
+  const isSizeOnlyResolutionModel = selectedModel.resolutionControlMode === 'sizeOnly';
+  const derivedRequestAspectRatioValue = useMemo(
+    () => deriveAspectRatioFromSize(selectedResolution.value) ?? selectedModel.defaultAspectRatio,
+    [selectedModel.defaultAspectRatio, selectedResolution.value]
   );
 
   const aspectRatioOptions = useMemo<AspectRatioChoice[]>(
@@ -314,6 +350,16 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       aspectRatioOptions.find((item) => item.value === data.requestAspectRatio) ??
       aspectRatioOptions[0],
     [aspectRatioOptions, data.requestAspectRatio]
+  );
+  const effectiveSelectedAspectRatio = useMemo<AspectRatioChoice>(
+    () =>
+      isSizeOnlyResolutionModel
+        ? {
+            value: derivedRequestAspectRatioValue,
+            label: derivedRequestAspectRatioValue,
+          }
+        : selectedAspectRatio,
+    [derivedRequestAspectRatioValue, isSizeOnlyResolutionModel, selectedAspectRatio]
   );
 
   const requestResolution = selectedModel.resolveRequest({
@@ -417,15 +463,15 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       updateNodeData(id, { size: selectedResolution.value as ImageSize });
     }
 
-    if (data.requestAspectRatio !== selectedAspectRatio.value) {
-      updateNodeData(id, { requestAspectRatio: selectedAspectRatio.value });
+    if (data.requestAspectRatio !== effectiveSelectedAspectRatio.value) {
+      updateNodeData(id, { requestAspectRatio: effectiveSelectedAspectRatio.value });
     }
   }, [
     data.model,
     data.requestAspectRatio,
     data.size,
+    effectiveSelectedAspectRatio.value,
     id,
-    selectedAspectRatio.value,
     selectedModel.id,
     selectedResolution.value,
     updateNodeData,
@@ -472,7 +518,33 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     }
 
     if (!providerApiKey) {
-      const errorMessage = t('node.imageEdit.apiKeyRequired');
+      const errorMessage =
+        providerCredentialKey === selectedModel.providerId
+          ? t('node.imageEdit.apiKeyRequired')
+          : t('node.imageEdit.subProviderApiKeyRequired', {
+              model: selectedModel.displayName,
+            });
+      setError(errorMessage);
+      void showErrorDialog(errorMessage, t('common.error'));
+      return;
+    }
+
+    if (providerCredentialKey !== selectedModel.providerId && !configuredRequestModelName) {
+      const errorMessage = t('node.imageEdit.modelNameRequired', {
+        model: selectedModel.displayName,
+      });
+      setError(errorMessage);
+      void showErrorDialog(errorMessage, t('common.error'));
+      return;
+    }
+
+    if (
+      typeof selectedModel.maxReferenceImages === 'number' &&
+      incomingImages.length > selectedModel.maxReferenceImages
+    ) {
+      const errorMessage = t('node.imageEdit.referenceImagesLimitExceeded', {
+        count: selectedModel.maxReferenceImages,
+      });
       setError(errorMessage);
       void showErrorDialog(errorMessage, t('common.error'));
       return;
@@ -507,10 +579,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       addEdge(id, newNodeId);
 
       try {
-        await canvasAiGateway.setApiKey(selectedModel.providerId, providerApiKey);
+        await canvasAiGateway.setApiKey(providerRoute, providerApiKey);
 
-        let resolvedRequestAspectRatio = selectedAspectRatio.value;
-        if (resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO) {
+        let resolvedRequestAspectRatio = effectiveSelectedAspectRatio.value;
+        if (!isSizeOnlyResolutionModel && resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO) {
           if (incomingImages.length > 0) {
             try {
               const sourceAspectRatio = await detectAspectRatio(incomingImages[0]);
@@ -555,6 +627,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           generationJobId: jobId,
           generationSourceType: 'imageEdit',
           generationProviderId: selectedModel.providerId,
+          generationCredentialKey: providerCredentialKey,
           generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
           generationStatus: 'queued',
           generationAttemptCount: 0,
@@ -568,7 +641,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           providerId: selectedModel.providerId,
           requestModel: requestResolution.requestModel,
           requestSize: selectedResolution.value,
-          requestAspectRatio: selectedAspectRatio.value,
+          requestAspectRatio: effectiveSelectedAspectRatio.value,
           prompt,
           extraParams: effectiveExtraParams,
           referenceImageCount: incomingImages.length,
@@ -596,6 +669,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           generationStartedAt: null,
           generationJobId: null,
           generationProviderId: null,
+          generationCredentialKey: null,
           generationClientSessionId: null,
           generationStatus: null,
           generationAttemptCount: 0,
@@ -613,6 +687,9 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     addNode,
     addEdge,
     providerApiKey,
+    providerCredentialKey,
+    providerRoute,
+    configuredRequestModelName,
     findNodePosition,
     promptDraft,
     effectiveExtraParams,
@@ -835,7 +912,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           selectedModel={selectedModel}
           resolutionOptions={resolutionOptions}
           selectedResolution={selectedResolution}
-          selectedAspectRatio={selectedAspectRatio}
+          selectedAspectRatio={effectiveSelectedAspectRatio}
           aspectRatioOptions={aspectRatioOptions}
           onModelChange={(modelId) => {
             updateNodeData(id, { model: modelId });

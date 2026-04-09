@@ -4,6 +4,7 @@ import type { Viewport } from '@xyflow/react';
 import {
   useCanvasStore,
   type CanvasEdge,
+  type CanvasHistorySnapshot,
   type CanvasHistoryState,
   type CanvasNode,
   type CanvasNodeData,
@@ -43,6 +44,7 @@ const MAX_PERSISTED_HISTORY_STEPS = 12;
 const MAX_HISTORY_RESTORE_JSON_CHARS = 1_500_000;
 const DELETE_RETRY_DELAY_MS = 80;
 const MAX_DELETE_RETRIES = 10;
+const LEGACY_QWEN_MODEL_IDS = new Set(['qianhai/qwen-image', 'qwen-image']);
 
 const queuedProjectUpserts = new Map<string, Project>();
 const projectUpsertTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -163,6 +165,114 @@ function mapHistoryImageReferences(
       ...snapshot,
       nodes: mapNodeImageReferences(snapshot.nodes, mapImageUrl),
     })),
+  };
+}
+
+function isLegacyQwenModelId(model: unknown): boolean {
+  return typeof model === 'string' && LEGACY_QWEN_MODEL_IDS.has(model.trim().toLowerCase());
+}
+
+function collectLegacyQwenNodeIds(nodes: CanvasNode[]): Set<string> {
+  return nodes.reduce<Set<string>>((legacyNodeIds, node) => {
+    const nodeData = node.data as Record<string, unknown> | undefined;
+    if (nodeData && isLegacyQwenModelId(nodeData.model)) {
+      legacyNodeIds.add(node.id);
+    }
+    return legacyNodeIds;
+  }, new Set<string>());
+}
+
+function sanitizeLegacyQwenNodesAndEdges(
+  nodes: CanvasNode[],
+  edges: CanvasEdge[]
+): {
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+  changed: boolean;
+} {
+  const legacyNodeIds = collectLegacyQwenNodeIds(nodes);
+  if (legacyNodeIds.size === 0) {
+    return { nodes, edges, changed: false };
+  }
+
+  return {
+    nodes: nodes.filter((node) => !legacyNodeIds.has(node.id)),
+    edges: edges.filter(
+      (edge) => !legacyNodeIds.has(edge.source) && !legacyNodeIds.has(edge.target)
+    ),
+    changed: true,
+  };
+}
+
+function sanitizeLegacyQwenSnapshot(snapshot: CanvasHistorySnapshot): {
+  snapshot: CanvasHistorySnapshot;
+  changed: boolean;
+} {
+  const sanitized = sanitizeLegacyQwenNodesAndEdges(snapshot.nodes, snapshot.edges);
+  if (!sanitized.changed) {
+    return { snapshot, changed: false };
+  }
+
+  return {
+    snapshot: {
+      nodes: sanitized.nodes,
+      edges: sanitized.edges,
+    },
+    changed: true,
+  };
+}
+
+function sanitizeLegacyQwenHistory(history: CanvasHistoryState): {
+  history: CanvasHistoryState;
+  changed: boolean;
+} {
+  let changed = false;
+
+  const past = history.past.map((snapshot) => {
+    const sanitized = sanitizeLegacyQwenSnapshot(snapshot);
+    changed = changed || sanitized.changed;
+    return sanitized.snapshot;
+  });
+  const future = history.future.map((snapshot) => {
+    const sanitized = sanitizeLegacyQwenSnapshot(snapshot);
+    changed = changed || sanitized.changed;
+    return sanitized.snapshot;
+  });
+
+  if (!changed) {
+    return { history, changed: false };
+  }
+
+  return {
+    history: {
+      past,
+      future,
+    },
+    changed: true,
+  };
+}
+
+function sanitizeLegacyQwenProject(project: Project): {
+  project: Project;
+  changed: boolean;
+} {
+  const sanitizedCurrent = sanitizeLegacyQwenNodesAndEdges(project.nodes, project.edges);
+  const sanitizedHistory = sanitizeLegacyQwenHistory(project.history);
+  const changed = sanitizedCurrent.changed || sanitizedHistory.changed;
+
+  if (!changed) {
+    return { project, changed: false };
+  }
+
+  return {
+    project: {
+      ...project,
+      nodes: sanitizedCurrent.nodes,
+      edges: sanitizedCurrent.edges,
+      history: sanitizedHistory.history,
+      nodeCount: sanitizedCurrent.nodes.length,
+    },
+    changed: true,
   };
 }
 
@@ -726,7 +836,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           return;
         }
 
-        const project = fromProjectRecord(record);
+        const restoredProject = fromProjectRecord(record);
+        const sanitizedProjectResult = sanitizeLegacyQwenProject(restoredProject);
+        const project = sanitizedProjectResult.changed
+          ? {
+              ...sanitizedProjectResult.project,
+              updatedAt: Date.now(),
+              nodeCount: sanitizedProjectResult.project.nodes.length,
+            }
+          : restoredProject;
         set((state) => ({
           currentProjectId: id,
           currentProject: project,
@@ -739,6 +857,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             nodeCount: project.nodeCount,
           }),
         }));
+        if (sanitizedProjectResult.changed) {
+          persistProject(project, { immediate: true });
+        }
       } catch (error) {
         if (reqSeq !== openProjectRequestSeq) {
           return;

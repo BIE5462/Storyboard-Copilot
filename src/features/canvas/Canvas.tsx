@@ -28,6 +28,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { getConfiguredApiKeyCount, useSettingsStore } from '@/stores/settingsStore';
 import { canvasAiGateway, canvasEventBus } from '@/features/canvas/application/canvasServices';
+import { getProviderRouteForCredentialKey } from '@/features/canvas/models/runtime';
 import {
   CANVAS_NODE_TYPES,
   type CanvasEdge,
@@ -440,13 +441,22 @@ export function Canvas() {
             const generationProviderId = typeof currentData.generationProviderId === 'string'
               ? currentData.generationProviderId
               : '';
+            const generationCredentialKey = typeof currentData.generationCredentialKey === 'string'
+              ? currentData.generationCredentialKey
+              : generationProviderId;
             if (generationProviderId) {
-              const providerApiKey = apiKeys[generationProviderId] ?? '';
+              const providerApiKey = apiKeys[generationCredentialKey] ?? '';
+              const providerRoute = getProviderRouteForCredentialKey(
+                generationCredentialKey,
+                generationProviderId
+              );
               if (providerApiKey) {
-                await canvasAiGateway.setApiKey(generationProviderId, providerApiKey).catch((error) => {
+                await canvasAiGateway.setApiKey(providerRoute, providerApiKey).catch((error) => {
                   console.warn('[GenerationJob] set_api_key failed before poll', {
                     nodeId: pendingNode.id,
                     generationProviderId,
+                    generationCredentialKey,
+                    providerRoute,
                     error,
                   });
                 });
@@ -513,6 +523,7 @@ export function Canvas() {
                 generationStartedAt: null,
                 generationJobId: null,
                 generationProviderId: null,
+                generationCredentialKey: null,
                 generationClientSessionId: null,
                 generationStatus: null,
                 generationAttemptCount: 0,
@@ -543,6 +554,7 @@ export function Canvas() {
               generationStartedAt: null,
               generationJobId: null,
               generationProviderId: null,
+              generationCredentialKey: null,
               generationClientSessionId: null,
               generationStatus: null,
               generationAttemptCount: status.attempt_count,
@@ -1133,6 +1145,9 @@ export function Canvas() {
         }
         if ('generationProviderId' in (data as Record<string, unknown>)) {
           (data as { generationProviderId?: string | null }).generationProviderId = null;
+        }
+        if ('generationCredentialKey' in (data as Record<string, unknown>)) {
+          (data as { generationCredentialKey?: string | null }).generationCredentialKey = null;
         }
         if ('generationClientSessionId' in (data as Record<string, unknown>)) {
           (data as { generationClientSessionId?: string | null }).generationClientSessionId = null;

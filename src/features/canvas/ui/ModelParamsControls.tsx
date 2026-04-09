@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { SlidersHorizontal, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { deriveAspectRatioFromSize } from '@/features/canvas/application/generationSize';
 import { AUTO_REQUEST_ASPECT_RATIO } from '@/features/canvas/domain/canvasNodes';
 import {
   getModelProvider,
@@ -195,7 +196,7 @@ export const ModelParamsControls = memo(({
   );
   const selectedProviderName = selectedProvider.label || selectedProvider.name;
   const providerOptions = useMemo(() => {
-    const providerOrder = ['kie', 'ppio', 'fal', 'grsai'];
+    const providerOrder = ['qianhai', 'kie', 'ppio', 'fal', 'grsai'];
     const providerIndex = new Map(providerOrder.map((id, index) => [id, index]));
     const uniqueProviderIds = Array.from(new Set(imageModels.map((model) => model.providerId)));
     return uniqueProviderIds
@@ -238,6 +239,17 @@ export const ModelParamsControls = memo(({
   const paramsSecondaryTextClassName = isCompactTrigger
     ? 'text-[10px] leading-none text-text-muted/80'
     : 'text-text-muted/80';
+  const isSizeOnlyResolutionModel = selectedModel.resolutionControlMode === 'sizeOnly';
+  const resolvedAspectRatioLabel = useMemo(
+    () => deriveAspectRatioFromSize(selectedResolution.value) ?? selectedAspectRatio.label,
+    [selectedAspectRatio.label, selectedResolution.value]
+  );
+  const paramsPrimaryLabel = isSizeOnlyResolutionModel
+    ? selectedResolution.label
+    : selectedAspectRatio.label;
+  const paramsSecondaryLabel = isSizeOnlyResolutionModel
+    ? resolvedAspectRatioLabel
+    : selectedResolution.label;
   const extraParamSchema = selectedModel.extraParamsSchema ?? [];
   const inlineExtraParamSchema = useMemo(
     () =>
@@ -425,8 +437,8 @@ export const ModelParamsControls = memo(({
           }}
         >
           <SlidersHorizontal className={paramsIconClassName} />
-          <span className={paramsPrimaryTextClassName}>{selectedAspectRatio.label}</span>
-          <span className={paramsSecondaryTextClassName}>· {selectedResolution.label}</span>
+          <span className={paramsPrimaryTextClassName}>{paramsPrimaryLabel}</span>
+          <span className={paramsSecondaryTextClassName}>· {paramsSecondaryLabel}</span>
         </UiChipButton>
       </div>
 
@@ -484,7 +496,8 @@ export const ModelParamsControls = memo(({
                         onClick={(event) => {
                           event.stopPropagation();
                           const providerApiKey = (apiKeys[provider.id] ?? '').trim();
-                          if (!providerApiKey) {
+                          const requiresProviderLevelApiKey = provider.id !== 'qianhai';
+                          if (requiresProviderLevelApiKey && !providerApiKey) {
                             setOpenPanel(null);
                             setMissingKeyProviderName(provider.label || provider.name);
                             return;
@@ -571,43 +584,45 @@ export const ModelParamsControls = memo(({
               </div>
             </div>
 
-            <div className="mt-3">
-              <div className="mb-2 text-xs text-text-muted">{t('modelParams.aspectRatio')}</div>
-              <div className="grid grid-cols-5 gap-1 rounded-xl border border-[rgba(255,255,255,0.1)] bg-bg-dark/65 p-1">
-                {aspectRatioOptions.map((item) => {
-                  const active = item.value === selectedAspectRatio.value;
-                  const previewStyle = getRatioPreviewStyle(
-                    item.value === AUTO_REQUEST_ASPECT_RATIO ? '1:1' : item.value
-                  );
+            {!isSizeOnlyResolutionModel && (
+              <div className="mt-3">
+                <div className="mb-2 text-xs text-text-muted">{t('modelParams.aspectRatio')}</div>
+                <div className="grid grid-cols-5 gap-1 rounded-xl border border-[rgba(255,255,255,0.1)] bg-bg-dark/65 p-1">
+                  {aspectRatioOptions.map((item) => {
+                    const active = item.value === selectedAspectRatio.value;
+                    const previewStyle = getRatioPreviewStyle(
+                      item.value === AUTO_REQUEST_ASPECT_RATIO ? '1:1' : item.value
+                    );
 
-                  return (
-                    <button
-                      key={item.value}
-                      className={`rounded-lg px-1 py-1.5 transition-colors ${active
-                        ? 'bg-surface-dark text-text-dark'
-                        : 'text-text-muted hover:bg-bg-dark'
-                        }`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onAspectRatioChange(item.value);
-                      }}
-                    >
-                      <div className="mb-1 flex h-6 items-center justify-center">
-                        {item.value === AUTO_REQUEST_ASPECT_RATIO ? (
-                          <Zap className="h-3 w-3" strokeWidth={2.4} />
-                        ) : (
-                          <span
-                            className="inline-block rounded-[3px] border border-current/60"
-                            style={previewStyle}
-                          />
-                        )}
-                      </div>
-                      <div className="text-[10px]">{item.label}</div>
-                    </button>
-                  );
-                })}
+                    return (
+                      <button
+                        key={item.value}
+                        className={`rounded-lg px-1 py-1.5 transition-colors ${active
+                          ? 'bg-surface-dark text-text-dark'
+                          : 'text-text-muted hover:bg-bg-dark'
+                          }`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onAspectRatioChange(item.value);
+                        }}
+                      >
+                        <div className="mb-1 flex h-6 items-center justify-center">
+                          {item.value === AUTO_REQUEST_ASPECT_RATIO ? (
+                            <Zap className="h-3 w-3" strokeWidth={2.4} />
+                          ) : (
+                            <span
+                              className="inline-block rounded-[3px] border border-current/60"
+                              style={previewStyle}
+                            />
+                          )}
+                        </div>
+                        <div className="text-[10px]">{item.label}</div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             {panelExtraParamSchema.length > 0 && (
               <div className="mt-3">

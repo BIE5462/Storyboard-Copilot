@@ -115,7 +115,11 @@
     "imageEdit": {
       "promptRequired": "Please enter a prompt",
       "apiKeyRequired": "Please set API key in Settings",
+      "subProviderApiKeyRequired": "Please add an independent API key for {{model}} in Settings",
+      "modelNameRequired": "Please set the request model name for {{model}} in Settings",
+      "referenceImagesLimitExceeded": "Qwen supports at most {{count}} reference images for this request",
       "resultTitle": "Result Image",
+      "resolutionFallback": "The current size is not supported by Qwen and has been reset to the default resolution",
       "promptPlaceholder": "Describe anything you want to generate or edit"
     },
     "upload": {
@@ -139,7 +143,10 @@
       "overallAspectRatio": "Overall ratio",
       "requestAspectRatio": "Request ratio",
       "framePlaceholder": "Frame {{index}} description",
-      "gridPreviewTitle": "Grid Preview"
+      "gridPreviewTitle": "Grid Preview",
+      "referenceImagesLimitExceeded": "Qwen supports at most {{count}} reference images, including the auto-attached grid reference",
+      "resolutionFallback": "The current size is not supported by Qwen and has been reset to the default resolution",
+      "frameDescriptionRequired": "Please describe at least one storyboard frame"
     },
     "textAnnotation": {
       "placeholder": "Write Markdown text. It will render when unselected.",
@@ -223,6 +230,10 @@
     "qianhaiMaxConcurrentGenerationsDesc": "Only applies to Qianhai image jobs. Range: 1 to 10. Extra jobs wait in queue.",
     "qianhaiRetryLimit": "Qianhai Auto Retry Count",
     "qianhaiRetryLimitDesc": "Only retries transient Qianhai failures automatically. Range: 0 to 5.",
+    "qianhaiGrokModelName": "Grok image model name",
+    "qianhaiGrokModelNameDesc": "Enter the actual Grok image model name under the Qianhai gateway and configure its independent API key.",
+    "qianhaiGrokApiKey": "Grok image API key",
+    "enterModelName": "Enter model name",
     "radiusPreset": "Corner Radius",
     "radiusPresetDesc": "Control global corner style for panels, inputs, and nodes.",
     "radiusCompact": "Compact",

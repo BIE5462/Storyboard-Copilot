@@ -18,6 +18,7 @@ pub struct GoogleCompatibleImagePreviewAdapter {
 const QIANHAI_REFERENCE_IMAGE_MAX_DIMENSION: u32 = 512;
 const QIANHAI_REFERENCE_IMAGE_MAX_BYTES: usize = 400 * 1024;
 const QIANHAI_REFERENCE_IMAGE_JPEG_QUALITY: u8 = 82;
+pub(crate) const QIANHAI_DYNAMIC_MODEL_NAME_KEY: &str = "qianhai_model_name";
 
 impl GoogleCompatibleImagePreviewAdapter {
     pub fn new(canonical_model: &'static str, aliases: &'static [&'static str]) -> Self {
@@ -168,12 +169,61 @@ fn resolve_inline_image_part(source: &str) -> Option<Value> {
     }))
 }
 
-fn truncate_for_log(input: &str, max_chars: usize) -> String {
+pub(crate) fn truncate_for_log(input: &str, max_chars: usize) -> String {
     if input.chars().count() <= max_chars {
         return input.to_string();
     }
 
     input.chars().take(max_chars).collect::<String>()
+}
+
+pub(crate) fn resolve_runtime_model_name(request: &GenerateRequest) -> Result<String, AIError> {
+    request
+        .extra_params
+        .as_ref()
+        .and_then(|params| params.get(QIANHAI_DYNAMIC_MODEL_NAME_KEY))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .ok_or_else(|| {
+            AIError::InvalidRequest(format!(
+                "Qianhai runtime model name is missing for {}",
+                request.model
+            ))
+        })
+}
+
+pub(crate) fn collect_reference_image_urls(
+    request: &GenerateRequest,
+) -> Result<Vec<String>, AIError> {
+    let mut urls = Vec::new();
+
+    if let Some(reference_images) = request.reference_images.as_ref() {
+        for source in reference_images {
+            let trimmed = source.trim();
+            if trimmed.is_empty() {
+                return Err(AIError::InvalidRequest(
+                    "Qianhai reference image source cannot be empty".to_string(),
+                ));
+            }
+
+            if trimmed.starts_with("http://")
+                || trimmed.starts_with("https://")
+                || trimmed.starts_with("data:image/")
+            {
+                urls.push(trimmed.to_string());
+                continue;
+            }
+
+            return Err(AIError::InvalidRequest(format!(
+                "Qianhai reference images must be http(s) URLs or data:image payloads: {}",
+                truncate_for_log(trimmed, 80)
+            )));
+        }
+    }
+
+    Ok(urls)
 }
 
 impl QianhaiModelAdapter for GoogleCompatibleImagePreviewAdapter {

@@ -22,7 +22,18 @@ const providers: ModelProviderDefinition[] = Object.values(providerModules)
 const imageModels: ImageModelDefinition[] = Object.values(modelModules)
   .map((module) => module.imageModel)
   .filter((model): model is ImageModelDefinition => Boolean(model))
-  .sort((a, b) => a.id.localeCompare(b.id));
+  .sort((a, b) => {
+    const priority = new Map<string, number>([
+      ['dashscope/qwen-image-2.0-pro', -20],
+      ['dashscope/qwen-image-2.0', -10],
+    ]);
+    const leftPriority = priority.get(a.id) ?? 0;
+    const rightPriority = priority.get(b.id) ?? 0;
+    if (leftPriority !== rightPriority) {
+      return leftPriority - rightPriority;
+    }
+    return a.id.localeCompare(b.id);
+  });
 
 const providerMap = new Map<string, ModelProviderDefinition>(
   providers.map((provider) => [provider.id, provider])
@@ -38,6 +49,9 @@ const imageModelAliasMap = new Map<string, string>([
   ['gemini-3.1-flash-edit', 'ppio/gemini-3.1-flash'],
   ['gemini-3-pro-image-preview', 'qianhai/gemini-3-pro-image-preview'],
   ['gemini-3.1-flash-image-preview', 'qianhai/gemini-3.1-flash-image-preview'],
+  ['qwen-image-2.0-pro', 'dashscope/qwen-image-2.0-pro'],
+  ['qwen-image-2.0', 'dashscope/qwen-image-2.0'],
+  ['grok-image', 'qianhai/grok-image'],
 ]);
 
 export function listImageModels(): ImageModelDefinition[] {
@@ -67,10 +81,14 @@ export function resolveImageModelResolution(
   context: ImageModelRuntimeContext = {}
 ): ResolutionOption {
   const resolutionOptions = resolveImageModelResolutions(model, context);
+  const normalizedRequestedResolution =
+    requestedResolution && requestedResolution.trim()
+      ? model.normalizeRequestedResolution?.(requestedResolution, context) ?? requestedResolution
+      : requestedResolution;
 
   return (
-    (requestedResolution
-      ? resolutionOptions.find((item) => item.value === requestedResolution)
+    (normalizedRequestedResolution
+      ? resolutionOptions.find((item) => item.value === normalizedRequestedResolution)
       : undefined) ??
     resolutionOptions.find((item) => item.value === model.defaultResolution) ??
     resolutionOptions[0] ??

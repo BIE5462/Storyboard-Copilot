@@ -66,7 +66,7 @@ impl AIProvider for PPIOProvider {
         self.model_registry.list_models()
     }
 
-    async fn set_api_key(&self, api_key: String) -> Result<(), AIError> {
+    async fn set_api_key(&self, _provider: &str, api_key: String) -> Result<(), AIError> {
         PPIOProvider::set_api_key(self, api_key).await;
         Ok(())
     }

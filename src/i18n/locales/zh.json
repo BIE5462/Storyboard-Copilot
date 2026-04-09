@@ -115,7 +115,11 @@
     "imageEdit": {
       "promptRequired": "请输入提示词",
       "apiKeyRequired": "请在设置中填写 API Key",
+      "subProviderApiKeyRequired": "请先在设置中填写 {{model}} 的独立 API Key",
+      "modelNameRequired": "请先在设置中填写 {{model}} 的模型调用名",
+      "referenceImagesLimitExceeded": "当前 Qwen 最多支持 {{count}} 张参考图",
       "resultTitle": "结果图片",
+      "resolutionFallback": "当前尺寸不受 Qwen 支持，已回退为默认分辨率",
       "promptPlaceholder": "描述任何你想要生成或编辑的内容"
     },
     "upload": {
@@ -139,7 +143,10 @@
       "overallAspectRatio": "整体比例",
       "requestAspectRatio": "请求比例",
       "framePlaceholder": "分镜 {{index}} 描述",
-      "gridPreviewTitle": "网格预览"
+      "gridPreviewTitle": "网格预览",
+      "referenceImagesLimitExceeded": "当前 Qwen 最多支持 {{count}} 张参考图（包含自动附加的网格参考图）",
+      "resolutionFallback": "当前尺寸不受 Qwen 支持，已回退为默认分辨率",
+      "frameDescriptionRequired": "请填写至少一个分镜内容描述"
     },
     "textAnnotation": {
       "placeholder": "输入 Markdown 文本，取消选中后会渲染预览",
@@ -223,6 +230,10 @@
     "qianhaiMaxConcurrentGenerationsDesc": "仅作用于千海图片生成任务，范围 1 到 10。超过并发后会自动排队等待。",
     "qianhaiRetryLimit": "千海失败自动重试次数",
     "qianhaiRetryLimitDesc": "仅对千海的临时失败自动重试，范围 0 到 5。",
+    "qianhaiGrokModelName": "Grok 图像模型调用名",
+    "qianhaiGrokModelNameDesc": "填写千海网关下实际调用的 Grok 图像模型名称，并为它配置独立 API Key。",
+    "qianhaiGrokApiKey": "Grok 图像独立 API Key",
+    "enterModelName": "请输入模型调用名",
     "radiusPreset": "圆角大小",
     "radiusPresetDesc": "控制面板、输入框与节点的全局圆角风格。",
     "radiusCompact": "紧凑",

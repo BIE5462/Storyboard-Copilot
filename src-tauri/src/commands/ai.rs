@@ -133,6 +133,25 @@ fn is_qianhai_provider(provider_id: &str) -> bool {
     provider_id.eq_ignore_ascii_case("qianhai")
 }
 
+fn is_qianhai_grok_model(model: &str) -> bool {
+    matches!(
+        model.trim().to_ascii_lowercase().as_str(),
+        "qianhai/grok-image" | "grok-image"
+    )
+}
+
+fn should_use_qianhai_scheduler(provider_id: &str, model: &str) -> bool {
+    is_qianhai_provider(provider_id) && !is_qianhai_grok_model(model)
+}
+
+fn resolve_provider_lookup_name(provider_id: &str) -> &str {
+    if provider_id.eq_ignore_ascii_case("qianhai-grok") {
+        "qianhai"
+    } else {
+        provider_id
+    }
+}
+
 fn message_contains_any(message: &str, patterns: &[&str]) -> bool {
     patterns.iter().any(|pattern| message.contains(pattern))
 }
@@ -664,12 +683,13 @@ pub async fn set_api_key(provider: String, api_key: String) -> Result<(), String
     info!("Setting API key for provider: {}", provider);
 
     let registry = get_registry();
+    let provider_lookup_name = resolve_provider_lookup_name(provider.as_str());
     let resolved_provider = registry
-        .get_provider(provider.as_str())
+        .get_provider(provider_lookup_name)
         .ok_or_else(|| format!("Unknown provider: {}", provider))?;
 
     resolved_provider
-        .set_api_key(api_key)
+        .set_api_key(provider.as_str(), api_key)
         .await
         .map_err(|error| error.to_string())
 }
@@ -764,7 +784,7 @@ pub async fn submit_generate_image_job(
         return Ok(job_id);
     }
 
-    if is_qianhai_provider(provider_id.as_str()) {
+    if should_use_qianhai_scheduler(provider_id.as_str(), req.model.as_str()) {
         let retry_limit = current_qianhai_retry_limit().await;
         insert_generation_job(
             &app,

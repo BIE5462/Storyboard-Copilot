@@ -8,6 +8,9 @@ import { getVersion } from '@tauri-apps/api/app';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useSettingsStore } from '@/stores/settingsStore';
+import {
+  QIANHAI_GROK_CREDENTIAL_KEY,
+} from '@/features/canvas/models/image/qianhai/runtime';
 import { UiCheckbox, UiSelect } from '@/components/ui';
 import { UI_CONTENT_OVERLAY_INSET_CLASS, UI_DIALOG_TRANSITION_MS } from '@/components/ui/motion';
 import { useDialogTransition } from '@/components/ui/useDialogTransition';
@@ -33,6 +36,7 @@ interface SettingsCheckboxCardProps {
 
 const PROVIDER_REGISTER_URLS: Record<string, string> = {
   qianhai: 'https://api.qianhai.online',
+  dashscope: 'https://help.aliyun.com/zh/dashscope/opening-service',
   ppio: 'https://ppio.com/user/register?invited_by=WGY0DZ',
   grsai: 'https://grsai.com',
   kie: 'https://kie.ai?ref=eef20ef0b0595cad227d45b29c635f6c',
@@ -41,6 +45,7 @@ const PROVIDER_REGISTER_URLS: Record<string, string> = {
 
 const PROVIDER_GET_KEY_URLS: Record<string, string> = {
   qianhai: 'https://api.qianhai.online',
+  dashscope: 'https://help.aliyun.com/zh/model-studio/get-api-key',
   ppio: 'https://ppio.com/settings/key-management',
   grsai: 'https://grsai.com/zh/dashboard/api-keys',
   kie: 'https://kie.ai/api-key',
@@ -93,6 +98,7 @@ export function SettingsDialog({
     apiKeys,
     qianhaiMaxConcurrentGenerations,
     qianhaiRetryLimit,
+    qianhaiGrokModelName,
     grsaiNanoBananaProModel,
     hideProviderGuidePopover,
     downloadPresetPaths,
@@ -117,6 +123,7 @@ export function SettingsDialog({
     setProviderApiKey,
     setQianhaiMaxConcurrentGenerations,
     setQianhaiRetryLimit,
+    setQianhaiGrokModelName,
     setGrsaiNanoBananaProModel,
     setDownloadPresetPaths,
     setUseUploadFilenameAsNodeTitle,
@@ -139,7 +146,7 @@ export function SettingsDialog({
     setEnableUpdateDialog,
   } = useSettingsStore();
   const providers = useMemo(() => {
-    const providerOrder = ['qianhai', 'kie', 'ppio', 'fal', 'grsai'];
+    const providerOrder = ['qianhai', 'dashscope', 'kie', 'ppio', 'fal', 'grsai'];
     const providerIndex = new Map(providerOrder.map((id, index) => [id, index]));
     return listModelProviders().slice().sort((left, right) => {
       const leftIndex = providerIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER;
@@ -153,6 +160,9 @@ export function SettingsDialog({
   const [localQianhaiMaxConcurrentGenerations, setLocalQianhaiMaxConcurrentGenerations] =
     useState(String(qianhaiMaxConcurrentGenerations));
   const [localQianhaiRetryLimit, setLocalQianhaiRetryLimit] = useState(String(qianhaiRetryLimit));
+  const [localQianhaiGrokModelName, setLocalQianhaiGrokModelName] = useState(
+    qianhaiGrokModelName
+  );
   const [localGrsaiNanoBananaProModel, setLocalGrsaiNanoBananaProModel] = useState(
     grsaiNanoBananaProModel
   );
@@ -223,6 +233,7 @@ export function SettingsDialog({
     setLocalApiKeys(apiKeys);
     setLocalQianhaiMaxConcurrentGenerations(String(qianhaiMaxConcurrentGenerations));
     setLocalQianhaiRetryLimit(String(qianhaiRetryLimit));
+    setLocalQianhaiGrokModelName(qianhaiGrokModelName);
     setLocalDownloadPresetPaths(downloadPresetPaths);
     setLocalGrsaiNanoBananaProModel(grsaiNanoBananaProModel);
     setLocalUseUploadFilenameAsNodeTitle(useUploadFilenameAsNodeTitle);
@@ -262,8 +273,10 @@ export function SettingsDialog({
     providers.forEach((provider) => {
       setProviderApiKey(provider.id, localApiKeys[provider.id] ?? '');
     });
+    setProviderApiKey(QIANHAI_GROK_CREDENTIAL_KEY, localApiKeys[QIANHAI_GROK_CREDENTIAL_KEY] ?? '');
     setQianhaiMaxConcurrentGenerations(Number(localQianhaiMaxConcurrentGenerations));
     setQianhaiRetryLimit(Number(localQianhaiRetryLimit));
+    setQianhaiGrokModelName(localQianhaiGrokModelName);
     setGrsaiNanoBananaProModel(localGrsaiNanoBananaProModel);
     setDownloadPresetPaths(localDownloadPresetPaths);
     setUseUploadFilenameAsNodeTitle(localUseUploadFilenameAsNodeTitle);
@@ -289,6 +302,7 @@ export function SettingsDialog({
     localApiKeys,
     localQianhaiMaxConcurrentGenerations,
     localQianhaiRetryLimit,
+    localQianhaiGrokModelName,
     localDownloadPresetPaths,
     localGrsaiNanoBananaProModel,
     localUseUploadFilenameAsNodeTitle,
@@ -313,6 +327,7 @@ export function SettingsDialog({
     setProviderApiKey,
     setQianhaiMaxConcurrentGenerations,
     setQianhaiRetryLimit,
+    setQianhaiGrokModelName,
     setGrsaiNanoBananaProModel,
     setDownloadPresetPaths,
     setUseUploadFilenameAsNodeTitle,
@@ -608,43 +623,102 @@ export function SettingsDialog({
                         </div>
 
                         {provider.id === 'qianhai' && (
-                          <div className="mt-3 grid gap-3 md:grid-cols-2">
-                            <div className="rounded-lg border border-border-dark/80 bg-surface-dark/60 p-3">
-                              <div className="text-xs font-medium text-text-dark">
-                                {t('settings.qianhaiMaxConcurrentGenerations')}
+                          <div className="mt-3 space-y-3">
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="rounded-lg border border-border-dark/80 bg-surface-dark/60 p-3">
+                                <div className="text-xs font-medium text-text-dark">
+                                  {t('settings.qianhaiMaxConcurrentGenerations')}
+                                </div>
+                                <p className="mt-1 text-[11px] leading-5 text-text-muted">
+                                  {t('settings.qianhaiMaxConcurrentGenerationsDesc')}
+                                </p>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={10}
+                                  step={1}
+                                  value={localQianhaiMaxConcurrentGenerations}
+                                  onChange={(event) =>
+                                    setLocalQianhaiMaxConcurrentGenerations(event.target.value)
+                                  }
+                                  className="mt-2 h-9 w-full rounded border border-border-dark bg-bg-dark px-3 text-sm text-text-dark"
+                                />
                               </div>
-                              <p className="mt-1 text-[11px] leading-5 text-text-muted">
-                                {t('settings.qianhaiMaxConcurrentGenerationsDesc')}
-                              </p>
-                              <input
-                                type="number"
-                                min={1}
-                                max={10}
-                                step={1}
-                                value={localQianhaiMaxConcurrentGenerations}
-                                onChange={(event) =>
-                                  setLocalQianhaiMaxConcurrentGenerations(event.target.value)
-                                }
-                                className="mt-2 h-9 w-full rounded border border-border-dark bg-bg-dark px-3 text-sm text-text-dark"
-                              />
+
+                              <div className="rounded-lg border border-border-dark/80 bg-surface-dark/60 p-3">
+                                <div className="text-xs font-medium text-text-dark">
+                                  {t('settings.qianhaiRetryLimit')}
+                                </div>
+                                <p className="mt-1 text-[11px] leading-5 text-text-muted">
+                                  {t('settings.qianhaiRetryLimitDesc')}
+                                </p>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={5}
+                                  step={1}
+                                  value={localQianhaiRetryLimit}
+                                  onChange={(event) => setLocalQianhaiRetryLimit(event.target.value)}
+                                  className="mt-2 h-9 w-full rounded border border-border-dark bg-bg-dark px-3 text-sm text-text-dark"
+                                />
+                              </div>
                             </div>
 
-                            <div className="rounded-lg border border-border-dark/80 bg-surface-dark/60 p-3">
-                              <div className="text-xs font-medium text-text-dark">
-                                {t('settings.qianhaiRetryLimit')}
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="rounded-lg border border-border-dark/80 bg-surface-dark/60 p-3">
+                                <div className="text-xs font-medium text-text-dark">
+                                  {t('settings.qianhaiGrokModelName')}
+                                </div>
+                                <p className="mt-1 text-[11px] leading-5 text-text-muted">
+                                  {t('settings.qianhaiGrokModelNameDesc')}
+                                </p>
+                                <input
+                                  type="text"
+                                  value={localQianhaiGrokModelName}
+                                  placeholder={t('settings.enterModelName')}
+                                  onChange={(event) =>
+                                    setLocalQianhaiGrokModelName(event.target.value)
+                                  }
+                                  className="mt-2 h-9 w-full rounded border border-border-dark bg-bg-dark px-3 text-sm text-text-dark"
+                                />
+
+                                <div className="relative mt-3">
+                                  <input
+                                    type={
+                                      revealedApiKeys[QIANHAI_GROK_CREDENTIAL_KEY]
+                                        ? 'text'
+                                        : 'password'
+                                    }
+                                    value={localApiKeys[QIANHAI_GROK_CREDENTIAL_KEY] ?? ''}
+                                    placeholder={t('settings.qianhaiGrokApiKey')}
+                                    onChange={(event) => {
+                                      const nextValue = event.target.value;
+                                      setLocalApiKeys((previous) => ({
+                                        ...previous,
+                                        [QIANHAI_GROK_CREDENTIAL_KEY]: nextValue,
+                                      }));
+                                    }}
+                                    className="h-10 w-full rounded border border-border-dark bg-bg-dark px-3 pr-10 text-sm text-text-dark placeholder:text-text-muted"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRevealedApiKeys((previous) => ({
+                                        ...previous,
+                                        [QIANHAI_GROK_CREDENTIAL_KEY]:
+                                          !previous[QIANHAI_GROK_CREDENTIAL_KEY],
+                                      }));
+                                    }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-bg-dark"
+                                  >
+                                    {revealedApiKeys[QIANHAI_GROK_CREDENTIAL_KEY] ? (
+                                      <EyeOff className="h-4 w-4 text-text-muted" />
+                                    ) : (
+                                      <Eye className="h-4 w-4 text-text-muted" />
+                                    )}
+                                  </button>
+                                </div>
                               </div>
-                              <p className="mt-1 text-[11px] leading-5 text-text-muted">
-                                {t('settings.qianhaiRetryLimitDesc')}
-                              </p>
-                              <input
-                                type="number"
-                                min={0}
-                                max={5}
-                                step={1}
-                                value={localQianhaiRetryLimit}
-                                onChange={(event) => setLocalQianhaiRetryLimit(event.target.value)}
-                                className="mt-2 h-9 w-full rounded border border-border-dark bg-bg-dark px-3 text-sm text-text-dark"
-                              />
                             </div>
                           </div>
                         )}

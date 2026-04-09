@@ -21,6 +21,7 @@ interface SettingsState {
   apiKeys: ProviderApiKeys;
   qianhaiMaxConcurrentGenerations: number;
   qianhaiRetryLimit: number;
+  qianhaiGrokModelName: string;
   grsaiNanoBananaProModel: string;
   hideProviderGuidePopover: boolean;
   downloadPresetPaths: string[];
@@ -45,6 +46,7 @@ interface SettingsState {
   setProviderApiKey: (providerId: string, key: string) => void;
   setQianhaiMaxConcurrentGenerations: (value: number) => void;
   setQianhaiRetryLimit: (value: number) => void;
+  setQianhaiGrokModelName: (value: string) => void;
   setGrsaiNanoBananaProModel: (model: string) => void;
   setHideProviderGuidePopover: (hide: boolean) => void;
   setDownloadPresetPaths: (paths: string[]) => void;
@@ -100,6 +102,10 @@ function normalizeQianhaiRetryLimit(input: number | string | null | undefined): 
   }
 
   return Math.min(5, Math.max(0, Math.round(numeric)));
+}
+
+function normalizeQianhaiModelName(input: string | null | undefined): string {
+  return input?.trim() ?? '';
 }
 
 function normalizePriceDisplayCurrencyMode(
@@ -159,7 +165,7 @@ function normalizeApiKeys(input: ProviderApiKeys | null | undefined): ProviderAp
 
   return Object.entries(input).reduce<ProviderApiKeys>((acc, [providerId, key]) => {
     const normalizedProviderId = providerId.trim();
-    if (!normalizedProviderId) {
+    if (!normalizedProviderId || normalizedProviderId === 'qianhai_qwen') {
       return acc;
     }
 
@@ -192,6 +198,7 @@ export const useSettingsStore = create<SettingsState>()(
       apiKeys: {},
       qianhaiMaxConcurrentGenerations: DEFAULT_QIANHAI_MAX_CONCURRENT_GENERATIONS,
       qianhaiRetryLimit: DEFAULT_QIANHAI_RETRY_LIMIT,
+      qianhaiGrokModelName: '',
       grsaiNanoBananaProModel: DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL,
       hideProviderGuidePopover: false,
       downloadPresetPaths: [],
@@ -229,6 +236,10 @@ export const useSettingsStore = create<SettingsState>()(
       setQianhaiRetryLimit: (qianhaiRetryLimit) =>
         set({
           qianhaiRetryLimit: normalizeQianhaiRetryLimit(qianhaiRetryLimit),
+        }),
+      setQianhaiGrokModelName: (qianhaiGrokModelName) =>
+        set({
+          qianhaiGrokModelName: normalizeQianhaiModelName(qianhaiGrokModelName),
         }),
       setGrsaiNanoBananaProModel: (model) =>
         set({
@@ -275,7 +286,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 11,
+      version: 13,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {
@@ -290,6 +301,7 @@ export const useSettingsStore = create<SettingsState>()(
           apiKeys?: ProviderApiKeys;
           qianhaiMaxConcurrentGenerations?: number | string;
           qianhaiRetryLimit?: number | string;
+          qianhaiGrokModelName?: string;
           ignoreAtTagWhenCopyingAndGenerating?: boolean;
           grsaiNanoBananaProModel?: string;
           hideProviderGuidePopover?: boolean;
@@ -318,6 +330,7 @@ export const useSettingsStore = create<SettingsState>()(
               state.qianhaiMaxConcurrentGenerations
             ),
             qianhaiRetryLimit: normalizeQianhaiRetryLimit(state.qianhaiRetryLimit),
+            qianhaiGrokModelName: normalizeQianhaiModelName(state.qianhaiGrokModelName),
             ignoreAtTagWhenCopyingAndGenerating,
             grsaiNanoBananaProModel: normalizeGrsaiNanoBananaProModel(
               state.grsaiNanoBananaProModel
@@ -349,6 +362,7 @@ export const useSettingsStore = create<SettingsState>()(
             state.qianhaiMaxConcurrentGenerations
           ),
           qianhaiRetryLimit: normalizeQianhaiRetryLimit(state.qianhaiRetryLimit),
+          qianhaiGrokModelName: normalizeQianhaiModelName(state.qianhaiGrokModelName),
           ignoreAtTagWhenCopyingAndGenerating,
           grsaiNanoBananaProModel: normalizeGrsaiNanoBananaProModel(
             state.grsaiNanoBananaProModel
