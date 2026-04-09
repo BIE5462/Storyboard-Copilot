@@ -1216,12 +1216,12 @@ export function SettingsDialog({
                     <p className="text-text-dark">
                       {t('settings.aboutRepositoryLabel')}:{' '}
                       <a
-                        href="https://github.com/henjicc/Storyboard-Copilot"
+                            href="https://github.com/BIE5462/Storyboard-Copilot"
                         target="_blank"
                         rel="noreferrer"
                         className="text-accent hover:underline break-all"
                       >
-                        https://github.com/henjicc/Storyboard-Copilot
+                            https://github.com/BIE5462/Storyboard-Copilot
                       </a>
                     </p>
                   </div>

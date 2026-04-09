@@ -2,9 +2,9 @@ use reqwest::{header, redirect, Client, StatusCode};
 use serde::Deserialize;
 
 const GITHUB_RELEASES_LATEST_API: &str =
-    "https://api.github.com/repos/henjicc/Storyboard-Copilot/releases/latest";
+    "https://api.github.com/repos/BIE5462/Storyboard-Copilot/releases/latest";
 const GITHUB_RELEASES_LATEST_REDIRECT: &str =
-    "https://github.com/henjicc/Storyboard-Copilot/releases/latest";
+    "https://github.com/BIE5462/Storyboard-Copilot/releases/latest";
 
 #[derive(Debug, Deserialize)]
 struct GithubLatestReleaseResponse {

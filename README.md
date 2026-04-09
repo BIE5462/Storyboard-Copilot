@@ -18,7 +18,7 @@ Windows 用户请下载 <strong>.exe</strong> 文件，macOS 用户请下载 <st
 Windows 用户如果在启动时遇到了报错，请尝试安装 [WebView2 运行时](https://developer.microsoft.com/zh-cn/Microsoft-edge/webview2#download)
 
 ### Github 下载
-[![Download Latest Release](https://img.shields.io/github/v/release/henjicc/Storyboard-Copilot?style=for-the-badge&color=blue)](https://github.com/henjicc/Storyboard-Copilot/releases/latest)
+[![Download Latest Release](https://img.shields.io/github/v/release/BIE5462/Storyboard-Copilot?style=for-the-badge&color=blue)](https://github.com/BIE5462/Storyboard-Copilot/releases/latest)
 
 ### 网盘下载
 **夸克网盘**：[https://pan.quark.cn/s/5b6733a8fc8e](https://pan.quark.cn/s/5b6733a8fc8e)
