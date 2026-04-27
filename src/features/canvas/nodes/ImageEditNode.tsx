@@ -61,6 +61,7 @@ import {
 } from '@/features/canvas/models/runtime';
 import {
   attachConfiguredQianhaiModelName,
+  requiresConfiguredQianhaiModelName,
   resolveConfiguredQianhaiRequestModelName,
 } from '@/features/canvas/models/image/qianhai/runtime';
 import { resolveModelPriceDisplay } from '@/features/canvas/pricing';
@@ -522,7 +523,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       return;
     }
 
-    if (providerCredentialKey !== selectedModel.providerId && !configuredRequestModelName) {
+    if (requiresConfiguredQianhaiModelName(selectedModel.id) && !configuredRequestModelName) {
       const errorMessage = t('node.imageEdit.modelNameRequired', {
         model: selectedModel.displayName,
       });

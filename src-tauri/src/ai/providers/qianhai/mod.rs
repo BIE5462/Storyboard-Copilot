@@ -2,15 +2,17 @@ mod adapter;
 mod models;
 mod registry;
 
-use reqwest::{
-    multipart::{Form, Part},
-    Client,
-};
+use reqwest::Client;
 use serde_json::Value;
+use std::io::Write;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
+use tokio::task;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
+use uuid::Uuid;
 
 use crate::ai::build_provider_http_client;
 use crate::ai::error::AIError;
@@ -21,19 +23,38 @@ use registry::QianhaiModelRegistry;
 
 const QIANHAI_PROVIDER_ROUTE: &str = "qianhai";
 const QIANHAI_GROK_PROVIDER_ROUTE: &str = "qianhai-grok";
+const QIANHAI_GPT_IMAGE_2_ALL_PROVIDER_ROUTE: &str = "qianhai-gpt-image-2-all";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum QianhaiCredentialSlot {
     Gemini,
     Grok,
+    GptImage2All,
 }
 
 pub struct QianhaiProvider {
     client: Client,
     gemini_api_key: Arc<RwLock<Option<String>>>,
     grok_api_key: Arc<RwLock<Option<String>>>,
+    gpt_image_2_all_api_key: Arc<RwLock<Option<String>>>,
     base_url: String,
     model_registry: QianhaiModelRegistry,
+}
+
+#[derive(Debug)]
+struct QianhaiHttpResponse {
+    status_code: u16,
+    raw_body: String,
+}
+
+impl QianhaiHttpResponse {
+    fn is_success(&self) -> bool {
+        (200..300).contains(&self.status_code)
+    }
+
+    fn status_label(&self) -> String {
+        self.status_code.to_string()
+    }
 }
 
 impl QianhaiProvider {
@@ -42,6 +63,7 @@ impl QianhaiProvider {
             client: build_provider_http_client(),
             gemini_api_key: Arc::new(RwLock::new(None)),
             grok_api_key: Arc::new(RwLock::new(None)),
+            gpt_image_2_all_api_key: Arc::new(RwLock::new(None)),
             base_url: "https://api.qianhai.online".to_string(),
             model_registry: QianhaiModelRegistry::new(),
         }
@@ -52,6 +74,7 @@ impl QianhaiProvider {
         let key_store = match slot {
             QianhaiCredentialSlot::Gemini => &self.gemini_api_key,
             QianhaiCredentialSlot::Grok => &self.grok_api_key,
+            QianhaiCredentialSlot::GptImage2All => &self.gpt_image_2_all_api_key,
         };
 
         {
@@ -70,6 +93,7 @@ impl QianhaiProvider {
         let key_store = match slot {
             QianhaiCredentialSlot::Gemini => &self.gemini_api_key,
             QianhaiCredentialSlot::Grok => &self.grok_api_key,
+            QianhaiCredentialSlot::GptImage2All => &self.gpt_image_2_all_api_key,
         };
 
         key_store
@@ -79,43 +103,12 @@ impl QianhaiProvider {
             .ok_or_else(|| AIError::InvalidRequest(api_key_missing_message(slot).to_string()))
     }
 
-    fn build_multipart_form(parts: &[PreparedMultipartPart]) -> Result<Form, AIError> {
-        let mut form = Form::new();
-
-        for part in parts {
-            match part {
-                PreparedMultipartPart::Text { name, value } => {
-                    form = form.text(name.clone(), value.clone());
-                }
-                PreparedMultipartPart::File {
-                    name,
-                    file_name,
-                    mime_type,
-                    bytes,
-                } => {
-                    let part = Part::bytes(bytes.clone())
-                        .file_name(file_name.clone())
-                        .mime_str(mime_type.as_str())
-                        .map_err(|error| {
-                            AIError::Provider(format!(
-                                "Failed to build Qianhai multipart image part: {}",
-                                error
-                            ))
-                        })?;
-                    form = form.part(name.clone(), part);
-                }
-            }
-        }
-
-        Ok(form)
-    }
-
     async fn post_json_with_retry(
         &self,
         endpoint: &str,
         api_key: &str,
         body: &Value,
-    ) -> Result<reqwest::Response, AIError> {
+    ) -> Result<QianhaiHttpResponse, AIError> {
         const MAX_ATTEMPTS: usize = 3;
         const RETRY_DELAYS_MS: [u64; MAX_ATTEMPTS - 1] = [300, 900];
 
@@ -131,7 +124,14 @@ impl QianhaiProvider {
                 .await;
 
             match response {
-                Ok(response) => return Ok(response),
+                Ok(response) => {
+                    let status_code = response.status().as_u16();
+                    let raw_body = response.text().await.unwrap_or_default();
+                    return Ok(QianhaiHttpResponse {
+                        status_code,
+                        raw_body,
+                    });
+                }
                 Err(error) => {
                     let should_retry = attempt < MAX_ATTEMPTS;
                     if !should_retry {
@@ -161,27 +161,28 @@ impl QianhaiProvider {
         endpoint: &str,
         api_key: &str,
         parts: &[PreparedMultipartPart],
-    ) -> Result<reqwest::Response, AIError> {
+    ) -> Result<QianhaiHttpResponse, AIError> {
         const MAX_ATTEMPTS: usize = 3;
         const RETRY_DELAYS_MS: [u64; MAX_ATTEMPTS - 1] = [300, 900];
 
         for attempt in 1..=MAX_ATTEMPTS {
-            let form = Self::build_multipart_form(parts)?;
-            let response = self
-                .client
-                .post(endpoint)
-                .header("Authorization", format!("Bearer {}", api_key))
-                .header("Accept", "application/json")
-                .multipart(form)
-                .send()
-                .await;
+            let endpoint = endpoint.to_string();
+            let api_key = api_key.to_string();
+            let parts = parts.to_vec();
+            let response = task::spawn_blocking(move || {
+                run_curl_multipart_request(endpoint, api_key, parts)
+            })
+            .await
+            .map_err(|error| {
+                AIError::Provider(format!("Qianhai multipart worker failed: {}", error))
+            })?;
 
             match response {
                 Ok(response) => return Ok(response),
                 Err(error) => {
                     let should_retry = attempt < MAX_ATTEMPTS;
                     if !should_retry {
-                        return Err(AIError::Network(error));
+                        return Err(error);
                     }
 
                     let delay_ms = RETRY_DELAYS_MS[attempt - 1];
@@ -207,7 +208,7 @@ impl QianhaiProvider {
         endpoint: &str,
         api_key: &str,
         body: &PreparedRequestBody,
-    ) -> Result<reqwest::Response, AIError> {
+    ) -> Result<QianhaiHttpResponse, AIError> {
         match body {
             PreparedRequestBody::Json(value) => {
                 self.post_json_with_retry(endpoint, api_key, value).await
@@ -217,6 +218,161 @@ impl QianhaiProvider {
             }
         }
     }
+}
+
+fn curl_command_name() -> &'static str {
+    if cfg!(windows) {
+        "curl.exe"
+    } else {
+        "curl"
+    }
+}
+
+fn curl_file_extension_for_mime_type(mime_type: &str) -> &'static str {
+    match mime_type.trim().to_ascii_lowercase().as_str() {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        _ => "png",
+    }
+}
+
+fn sanitize_curl_file_name(file_name: &str, fallback: &str) -> String {
+    let sanitized = file_name
+        .chars()
+        .map(|ch| match ch {
+            '"' | ';' | '\r' | '\n' | '/' | '\\' => '_',
+            _ => ch,
+        })
+        .collect::<String>();
+    let trimmed = sanitized.trim();
+    if trimmed.is_empty() || trimmed.chars().all(|ch| matches!(ch, '_' | '.')) {
+        fallback.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn escape_curl_config_value(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn parse_curl_http_response(stdout: &[u8]) -> Result<QianhaiHttpResponse, AIError> {
+    const STATUS_MARKER: &str = "\n__STORYBOARD_HTTP_STATUS__:";
+    let output = String::from_utf8_lossy(stdout).to_string();
+    let Some((raw_body, raw_status)) = output.rsplit_once(STATUS_MARKER) else {
+        return Err(AIError::Provider(format!(
+            "Qianhai curl response missing HTTP status marker: {}",
+            truncate_for_log(output.as_str(), 200)
+        )));
+    };
+    let status_code = raw_status.trim().parse::<u16>().map_err(|error| {
+        AIError::Provider(format!(
+            "Qianhai curl response had invalid HTTP status '{}': {}",
+            raw_status.trim(),
+            error
+        ))
+    })?;
+
+    Ok(QianhaiHttpResponse {
+        status_code,
+        raw_body: raw_body.to_string(),
+    })
+}
+
+fn run_curl_multipart_request(
+    endpoint: String,
+    api_key: String,
+    parts: Vec<PreparedMultipartPart>,
+) -> Result<QianhaiHttpResponse, AIError> {
+    let temp_dir = std::env::temp_dir().join(format!("storyboard-qianhai-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&temp_dir)?;
+
+    let result = run_curl_multipart_request_with_temp_dir(endpoint, api_key, parts, &temp_dir);
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    result
+}
+
+fn run_curl_multipart_request_with_temp_dir(
+    endpoint: String,
+    api_key: String,
+    parts: Vec<PreparedMultipartPart>,
+    temp_dir: &PathBuf,
+) -> Result<QianhaiHttpResponse, AIError> {
+    let mut command = Command::new(curl_command_name());
+    command
+        .arg("-sS")
+        .arg("--connect-timeout")
+        .arg("15")
+        .arg("--max-time")
+        .arg("600")
+        .arg("-X")
+        .arg("POST")
+        .arg(endpoint)
+        .arg("-K")
+        .arg("-")
+        .arg("-w")
+        .arg("\n__STORYBOARD_HTTP_STATUS__:%{http_code}")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut file_index = 0usize;
+    for part in parts {
+        match part {
+            PreparedMultipartPart::Text { name, value } => {
+                command.arg("--form-string").arg(format!("{}={}", name, value));
+            }
+            PreparedMultipartPart::File {
+                name,
+                file_name,
+                mime_type,
+                bytes,
+            } => {
+                let fallback_name = format!(
+                    "reference_{}.{}",
+                    file_index + 1,
+                    curl_file_extension_for_mime_type(mime_type.as_str())
+                );
+                let safe_file_name = sanitize_curl_file_name(file_name.as_str(), fallback_name.as_str());
+                let temp_path = temp_dir.join(format!("upload_{}_{}", file_index + 1, safe_file_name));
+                std::fs::write(&temp_path, bytes)?;
+                command.arg("--form").arg(format!(
+                    "{}=@{};type={};filename={}",
+                    name,
+                    temp_path.display(),
+                    mime_type,
+                    safe_file_name
+                ));
+                file_index += 1;
+            }
+        }
+    }
+
+    let mut child = command.spawn().map_err(|error| {
+        AIError::Provider(format!(
+            "Failed to start curl for Qianhai multipart request: {}",
+            error
+        ))
+    })?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let config = format!(
+            "header = \"Accept: application/json\"\nheader = \"Authorization: Bearer {}\"\n",
+            escape_curl_config_value(api_key.as_str())
+        );
+        stdin.write_all(config.as_bytes())?;
+    }
+
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AIError::Provider(format!(
+            "Qianhai curl multipart request failed: {}",
+            truncate_for_log(stderr.as_ref(), 300)
+        )));
+    }
+
+    parse_curl_http_response(output.stdout.as_slice())
 }
 
 fn normalize_identifier(input: &str) -> String {
@@ -230,9 +386,17 @@ fn is_qianhai_grok_model(model: &str) -> bool {
     )
 }
 
+fn is_qianhai_gpt_image_2_all_model(model: &str) -> bool {
+    matches!(
+        normalize_identifier(model).as_str(),
+        "qianhai/gpt-image-2-all" | "gpt-image-2-all"
+    )
+}
+
 fn resolve_credential_slot_for_provider(provider: &str) -> QianhaiCredentialSlot {
     match normalize_identifier(provider).as_str() {
         QIANHAI_GROK_PROVIDER_ROUTE => QianhaiCredentialSlot::Grok,
+        QIANHAI_GPT_IMAGE_2_ALL_PROVIDER_ROUTE => QianhaiCredentialSlot::GptImage2All,
         _ => QianhaiCredentialSlot::Gemini,
     }
 }
@@ -242,6 +406,10 @@ fn resolve_credential_slot_for_model(model: &str) -> QianhaiCredentialSlot {
         return QianhaiCredentialSlot::Grok;
     }
 
+    if is_qianhai_gpt_image_2_all_model(model) {
+        return QianhaiCredentialSlot::GptImage2All;
+    }
+
     QianhaiCredentialSlot::Gemini
 }
 
@@ -249,6 +417,7 @@ fn api_key_missing_message(slot: QianhaiCredentialSlot) -> &'static str {
     match slot {
         QianhaiCredentialSlot::Gemini => "Qianhai Gemini API key not set",
         QianhaiCredentialSlot::Grok => "Qianhai Grok API key not set",
+        QianhaiCredentialSlot::GptImage2All => "Qianhai GPT Image 2 All API key not set",
     }
 }
 
@@ -562,13 +731,14 @@ impl AIProvider for QianhaiProvider {
             .post_with_retry(&prepared.endpoint, &api_key, &prepared.body)
             .await?;
 
-        let status = response.status();
-        let raw_response = response.text().await.unwrap_or_default();
+        let is_success = response.is_success();
+        let status_label = response.status_label();
+        let raw_response = response.raw_body;
 
-        if !status.is_success() {
+        if !is_success {
             return Err(AIError::Provider(format!(
                 "Qianhai API error {}: {}",
-                status, raw_response
+                status_label, raw_response
             )));
         }
 
@@ -636,5 +806,55 @@ mod tests {
         let source = extract_openai_image_source_from_response(&body).unwrap();
 
         assert_eq!(source, "https://example.test/generated.png");
+    }
+
+    #[test]
+    fn gpt_image_2_all_uses_independent_credential_slot() {
+        assert_eq!(
+            resolve_credential_slot_for_provider("qianhai-gpt-image-2-all"),
+            QianhaiCredentialSlot::GptImage2All
+        );
+        assert_eq!(
+            resolve_credential_slot_for_model("qianhai/gpt-image-2-all"),
+            QianhaiCredentialSlot::GptImage2All
+        );
+    }
+
+    #[test]
+    fn curl_http_response_parser_extracts_body_and_status() {
+        let response =
+            parse_curl_http_response(br#"{"data":[{"url":"https://example.test/image.png"}]}
+__STORYBOARD_HTTP_STATUS__:200"#)
+                .unwrap();
+
+        assert_eq!(response.status_code, 200);
+        assert_eq!(
+            response.raw_body,
+            r#"{"data":[{"url":"https://example.test/image.png"}]}"#
+        );
+        assert!(response.is_success());
+    }
+
+    #[test]
+    fn curl_http_response_parser_rejects_missing_status_marker() {
+        let error = parse_curl_http_response(br#"{"error":"missing marker"}"#).unwrap_err();
+
+        assert!(matches!(
+            error,
+            AIError::Provider(message)
+                if message.contains("missing HTTP status marker")
+        ));
+    }
+
+    #[test]
+    fn curl_upload_file_names_are_sanitized() {
+        assert_eq!(
+            sanitize_curl_file_name("..\\bad/name;\".jpg", "fallback.jpg"),
+            ".._bad_name__.jpg"
+        );
+        assert_eq!(sanitize_curl_file_name("  \n  ", "fallback.jpg"), "fallback.jpg");
+        assert_eq!(curl_file_extension_for_mime_type("image/jpeg"), "jpg");
+        assert_eq!(curl_file_extension_for_mime_type("image/webp"), "webp");
+        assert_eq!(curl_file_extension_for_mime_type("application/octet-stream"), "png");
     }
 }

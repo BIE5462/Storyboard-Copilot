@@ -145,7 +145,9 @@ fn should_use_qianhai_scheduler(provider_id: &str, model: &str) -> bool {
 }
 
 fn resolve_provider_lookup_name(provider_id: &str) -> &str {
-    if provider_id.eq_ignore_ascii_case("qianhai-grok") {
+    if provider_id.eq_ignore_ascii_case("qianhai-grok")
+        || provider_id.eq_ignore_ascii_case("qianhai-gpt-image-2-all")
+    {
         "qianhai"
     } else {
         provider_id
@@ -1035,6 +1037,14 @@ mod tests {
     fn qianhai_defaults_match_product_expectations() {
         assert_eq!(DEFAULT_QIANHAI_MAX_CONCURRENT, 1);
         assert_eq!(DEFAULT_QIANHAI_RETRY_LIMIT, 1);
+    }
+
+    #[test]
+    fn qianhai_gpt_image_2_all_uses_qianhai_provider_lookup() {
+        assert_eq!(
+            resolve_provider_lookup_name("qianhai-gpt-image-2-all"),
+            "qianhai"
+        );
     }
 
     #[test]

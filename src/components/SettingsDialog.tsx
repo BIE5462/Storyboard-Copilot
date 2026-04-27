@@ -11,6 +11,7 @@ import {
   removeDownloadPresetDirectory,
 } from '@/commands/image';
 import {
+  QIANHAI_GPT_IMAGE_2_ALL_CREDENTIAL_KEY,
   QIANHAI_GROK_CREDENTIAL_KEY,
 } from '@/features/canvas/models/image/qianhai/runtime';
 import { UiCheckbox, UiSelect } from '@/components/ui';
@@ -274,6 +275,10 @@ export function SettingsDialog({
       setProviderApiKey(provider.id, localApiKeys[provider.id] ?? '');
     });
     setProviderApiKey(QIANHAI_GROK_CREDENTIAL_KEY, localApiKeys[QIANHAI_GROK_CREDENTIAL_KEY] ?? '');
+    setProviderApiKey(
+      QIANHAI_GPT_IMAGE_2_ALL_CREDENTIAL_KEY,
+      localApiKeys[QIANHAI_GPT_IMAGE_2_ALL_CREDENTIAL_KEY] ?? ''
+    );
     setQianhaiMaxConcurrentGenerations(Number(localQianhaiMaxConcurrentGenerations));
     setQianhaiRetryLimit(Number(localQianhaiRetryLimit));
     setQianhaiGrokModelName(localQianhaiGrokModelName);
@@ -696,6 +701,52 @@ export function SettingsDialog({
                                     className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-bg-dark"
                                   >
                                     {revealedApiKeys[QIANHAI_GROK_CREDENTIAL_KEY] ? (
+                                      <EyeOff className="h-4 w-4 text-text-muted" />
+                                    ) : (
+                                      <Eye className="h-4 w-4 text-text-muted" />
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="rounded-lg border border-border-dark/80 bg-surface-dark/60 p-3">
+                                <div className="text-xs font-medium text-text-dark">
+                                  {t('settings.qianhaiGptImage2AllApiKeyTitle')}
+                                </div>
+                                <p className="mt-1 text-[11px] leading-5 text-text-muted">
+                                  {t('settings.qianhaiGptImage2AllApiKeyDesc')}
+                                </p>
+
+                                <div className="relative mt-3">
+                                  <input
+                                    type={
+                                      revealedApiKeys[QIANHAI_GPT_IMAGE_2_ALL_CREDENTIAL_KEY]
+                                        ? 'text'
+                                        : 'password'
+                                    }
+                                    value={localApiKeys[QIANHAI_GPT_IMAGE_2_ALL_CREDENTIAL_KEY] ?? ''}
+                                    placeholder={t('settings.qianhaiGptImage2AllApiKey')}
+                                    onChange={(event) => {
+                                      const nextValue = event.target.value;
+                                      setLocalApiKeys((previous) => ({
+                                        ...previous,
+                                        [QIANHAI_GPT_IMAGE_2_ALL_CREDENTIAL_KEY]: nextValue,
+                                      }));
+                                    }}
+                                    className="h-10 w-full rounded border border-border-dark bg-bg-dark px-3 pr-10 text-sm text-text-dark placeholder:text-text-muted"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRevealedApiKeys((previous) => ({
+                                        ...previous,
+                                        [QIANHAI_GPT_IMAGE_2_ALL_CREDENTIAL_KEY]:
+                                          !previous[QIANHAI_GPT_IMAGE_2_ALL_CREDENTIAL_KEY],
+                                      }));
+                                    }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-bg-dark"
+                                  >
+                                    {revealedApiKeys[QIANHAI_GPT_IMAGE_2_ALL_CREDENTIAL_KEY] ? (
                                       <EyeOff className="h-4 w-4 text-text-muted" />
                                     ) : (
                                       <Eye className="h-4 w-4 text-text-muted" />
