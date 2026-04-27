@@ -389,10 +389,14 @@ function toProjectSummary(record: ProjectSummaryRecord): ProjectSummary {
   };
 }
 
-function toProjectRecord(project: Project): ProjectRecord {
-  const encodedProject = encodeProject(project);
+export function toProjectRecord(project: Project): ProjectRecord {
+  const projectWithPersistedHistory: Project = {
+    ...project,
+    history: trimHistoryForPersistence(project.history),
+  };
+  const encodedProject = encodeProject(projectWithPersistedHistory);
   const persistedNodes = encodedProject.nodes;
-  const persistedHistory = trimHistoryForPersistence(encodedProject.history);
+  const persistedHistory = encodedProject.history;
 
   return {
     id: encodedProject.id,
@@ -410,7 +414,7 @@ function toProjectRecord(project: Project): ProjectRecord {
   };
 }
 
-function fromProjectRecord(record: ProjectRecord): Project {
+export function fromProjectRecord(record: ProjectRecord): Project {
   const parsedNodes = safeParseJson<CanvasNode[]>(record.nodesJson, []);
   const parsedEdges = safeParseJson<CanvasEdge[]>(record.edgesJson, []);
   const parsedViewport = safeParseJson<Viewport>(record.viewportJson, DEFAULT_VIEWPORT);

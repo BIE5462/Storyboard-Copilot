@@ -112,8 +112,8 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
       return sourceFileName;
     }
 
-    return resolveNodeDisplayName(CANVAS_NODE_TYPES.upload, data);
-  }, [data, useUploadFilenameAsNodeTitle]);
+    return resolveNodeDisplayName(CANVAS_NODE_TYPES.upload, data, t);
+  }, [data, t, useUploadFilenameAsNodeTitle]);
 
   const clearTransientPreview = useCallback(() => {
     setTransientPreviewUrl((current) => {

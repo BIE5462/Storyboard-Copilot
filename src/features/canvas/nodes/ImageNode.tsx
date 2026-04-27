@@ -94,8 +94,8 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
   const resolvedWidth = resolveNodeDimension(width, compactSize.width);
   const resolvedHeight = resolveNodeDimension(height, compactSize.height);
   const resolvedTitle = useMemo(
-    () => resolveNodeDisplayName(type as CanvasNodeType, data),
-    [data, type]
+    () => resolveNodeDisplayName(type as CanvasNodeType, data, t),
+    [data, t, type]
   );
 
   useEffect(() => {

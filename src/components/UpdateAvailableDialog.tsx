@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { UiButton, UiModal, UiSelect } from '@/components/ui';
+import { openExternalUrl } from '@/features/platform/platformService';
 
 const QUARK_DOWNLOAD_URL = 'https://pan.quark.cn/s/5b6733a8fc8e';
 const GITHUB_RELEASES_URL = 'https://github.com/BIE5462/Storyboard-Copilot/releases';
@@ -35,11 +35,11 @@ export function UpdateAvailableDialog({
   );
 
   const handleOpenQuark = useCallback(() => {
-    void openUrl(QUARK_DOWNLOAD_URL);
+    void openExternalUrl(QUARK_DOWNLOAD_URL);
   }, []);
 
   const handleOpenGithub = useCallback(() => {
-    void openUrl(GITHUB_RELEASES_URL);
+    void openExternalUrl(GITHUB_RELEASES_URL);
   }, []);
 
   const handleApplyIgnore = useCallback(() => {

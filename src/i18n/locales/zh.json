@@ -45,6 +45,26 @@
     "annotate": "标注",
     "split": "切割"
   },
+  "toolEditor": {
+    "crop": {
+      "aspectRatio": "目标比例",
+      "custom": "自定义",
+      "customRatioRequired": "请输入比例，例如 3:2 或 1.5",
+      "customRatioInvalid": "比例格式无效",
+      "customRatioPlaceholder": "输入比例，如 3:2 或 1.5",
+      "ratio": {
+        "free": "自由",
+        "original": "原图"
+      }
+    },
+    "annotate": {
+      "rect": "矩形",
+      "ellipse": "圆形",
+      "arrow": "箭头",
+      "pen": "画笔",
+      "text": "文本"
+    }
+  },
   "toolDialog": {
     "suffix": "工具",
     "noProcessableImage": "当前节点没有可处理的图片",
@@ -85,6 +105,20 @@
     "thinkingHigh": "高"
   },
   "node": {
+    "defaults": {
+      "upload": "上传图片",
+      "imageEdit": "AI 图片",
+      "textAnnotation": "文本注释",
+      "group": "分组",
+      "storyboardSplit": "切割结果",
+      "storyboardGen": "分镜生成",
+      "exportImage": {
+        "generic": "结果图片",
+        "storyboardGenOutput": "分镜输出",
+        "storyboardSplitExport": "切割导出",
+        "storyboardFrameEdit": "分镜帧"
+      }
+    },
     "menu": {
       "uploadImage": "上传图片",
       "aiImageGeneration": "AI 图片",
@@ -131,7 +165,43 @@
       "frames": "分镜格",
       "rows": "行数",
       "cols": "列数",
-      "frameIndex": "第 {{index}} 格"
+      "frameIndex": "第 {{index}} 格",
+      "frameLabel": "图{{index}}",
+      "emptyFrame": "空分镜",
+      "editFrameTitle": "单独编辑此格",
+      "replaceFromInputTitle": "从输入图片替换",
+      "frameNotePlaceholder": "分镜 {{index}} 描述",
+      "noEditableImage": "该分镜没有可编辑图片",
+      "createEditNodeFailed": "创建编辑节点失败",
+      "noExportableImage": "没有可导出的图片",
+      "exportCanvasInitFailed": "导出画布初始化失败",
+      "exportFailed": "导出失败",
+      "noPackableImage": "该分镜没有可导出的图片",
+      "packDownloadFailed": "打包下载失败",
+      "openFolderFailed": "打开文件夹失败",
+      "noInputImages": "暂无输入图片",
+      "exportSettings": "导出设置",
+      "frameCount": "{{count}} 格",
+      "packDownloading": "打包中...",
+      "packDownload": "打包下载",
+      "exporting": "导出中...",
+      "mergeStoryboard": "合并分镜",
+      "showFrameIndex": "显示分镜序号",
+      "showFrameNote": "显示分镜描述",
+      "imageFit": "图片填充",
+      "imageFitCover": "填充满格",
+      "imageFitContain": "完整显示",
+      "frameIndexPrefix": "序号前缀",
+      "notePlacement": "描述位置",
+      "notePlacementOverlay": "图上遮罩",
+      "notePlacementBottom": "图下文字",
+      "cellGap": "间距",
+      "fontSizePercent": "字号(%)",
+      "background": "背景",
+      "textColor": "文字",
+      "exportDone": "导出完成",
+      "exportDoneDesc": "图片已导出到以下路径：",
+      "openFolder": "打开文件夹"
     },
     "storyboardGen": {
       "rowsShort": "行",
@@ -257,7 +327,7 @@
     "accentColorDesc": "用于按钮、选中边框和交互高亮。",
     "resetAccentColor": "恢复默认",
     "downloadPresetPaths": "下载预设路径",
-    "downloadPresetPathsDesc": "用于节点工具条下载菜单中的快速保存目录（最多 8 个）",
+    "downloadPresetPathsDesc": "用于节点工具条下载菜单中的快速保存目录（最多 8 个），必须通过系统目录选择器添加",
     "storyboardGenKeepStyleConsistent": "分镜图风格与参考图保持一致",
     "storyboardGenKeepStyleConsistentDesc": "启用后，分镜生成提示词会追加“图片风格与参考图保持一致”。",
     "storyboardGenDisableTextInImage": "分镜图禁止生成描述文本",
@@ -266,8 +336,6 @@
     "ignoreAtTagWhenCopyingAndGeneratingDesc": "启用后，复制文本和写入图片分镜元数据时会忽略类似“@图1”的标签；发送生成请求时仅移除“@”并保留“图1”。",
     "useUploadFilenameAsNodeTitle": "上传节点自动使用文件名作为标题",
     "useUploadFilenameAsNodeTitleDesc": "启用后，新上传图片会默认使用文件名作为节点标题（仍可双击手动重命名）。",
-    "downloadPathPlaceholder": "输入目录路径，例如 /Users/name/Pictures/Storyboard 或 D:\\\\Images\\\\Storyboard",
-    "addPath": "添加路径",
     "chooseFolder": "选择文件夹",
     "noDownloadPresetPaths": "暂无预设路径",
     "providerApiKeyGuidePrefix": "首先",

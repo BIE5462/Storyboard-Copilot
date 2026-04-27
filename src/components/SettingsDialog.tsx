@@ -1,13 +1,15 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { X, Eye, EyeOff, FolderOpen, Plus, Trash2 } from 'lucide-react';
+import { X, Eye, EyeOff, FolderOpen, Trash2 } from 'lucide-react';
 import { Trans, useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import { getVersion } from '@tauri-apps/api/app';
-import { open } from '@tauri-apps/plugin-dialog';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { getAppVersion, openExternalUrl } from '@/features/platform/platformService';
+import {
+  pickDownloadPresetDirectory,
+  removeDownloadPresetDirectory,
+} from '@/commands/image';
 import {
   QIANHAI_GROK_CREDENTIAL_KEY,
 } from '@/features/canvas/models/image/qianhai/runtime';
@@ -166,7 +168,6 @@ export function SettingsDialog({
   const [localGrsaiNanoBananaProModel, setLocalGrsaiNanoBananaProModel] = useState(
     grsaiNanoBananaProModel
   );
-  const [localDownloadPathInput, setLocalDownloadPathInput] = useState('');
   const [localDownloadPresetPaths, setLocalDownloadPresetPaths] = useState(downloadPresetPaths);
   const [localUseUploadFilenameAsNodeTitle, setLocalUseUploadFilenameAsNodeTitle] = useState(
     useUploadFilenameAsNodeTitle
@@ -210,7 +211,7 @@ export function SettingsDialog({
     let mounted = true;
     const loadAppVersion = async () => {
       try {
-        const version = await getVersion();
+        const version = await getAppVersion();
         if (mounted) {
           setAppVersion(version);
         }
@@ -256,7 +257,6 @@ export function SettingsDialog({
     setLocalEnableUpdateDialog(enableUpdateDialog);
     setCheckUpdateStatus('');
     setRevealedApiKeys({});
-    setLocalDownloadPathInput('');
   }, [
     isOpen,
   ]);
@@ -363,11 +363,8 @@ export function SettingsDialog({
 
   const handlePickDownloadPath = useCallback(async () => {
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-      });
-      if (!selected || Array.isArray(selected)) {
+      const selected = await pickDownloadPresetDirectory();
+      if (!selected) {
         return;
       }
       setLocalDownloadPresetPaths((previous) => {
@@ -381,21 +378,8 @@ export function SettingsDialog({
     }
   }, []);
 
-  const handleAddDownloadPathFromInput = useCallback(() => {
-    const next = localDownloadPathInput.trim();
-    if (!next) {
-      return;
-    }
-    setLocalDownloadPresetPaths((previous) => {
-      if (previous.includes(next)) {
-        return previous;
-      }
-      return [...previous, next].slice(0, 8);
-    });
-    setLocalDownloadPathInput('');
-  }, [localDownloadPathInput]);
-
   const handleRemoveDownloadPath = useCallback((path: string) => {
+    void removeDownloadPresetDirectory(path);
     setLocalDownloadPresetPaths((previous) => previous.filter((value) => value !== path));
   }, []);
 
@@ -403,7 +387,7 @@ export function SettingsDialog({
     if (!href) {
       return;
     }
-    void openUrl(href);
+    void openExternalUrl(href);
   }, []);
 
   if (!shouldRender) return null;
@@ -1056,20 +1040,6 @@ export function SettingsDialog({
                     </div>
 
                     <div className="mb-2 flex items-center gap-2">
-                      <input
-                        value={localDownloadPathInput}
-                        onChange={(event) => setLocalDownloadPathInput(event.target.value)}
-                        placeholder={t('settings.downloadPathPlaceholder')}
-                        className="h-9 flex-1 rounded border border-border-dark bg-surface-dark px-3 text-sm text-text-dark outline-none placeholder:text-text-muted"
-                      />
-                      <button
-                        type="button"
-                        className="inline-flex h-9 items-center justify-center rounded border border-border-dark bg-surface-dark px-3 text-xs text-text-dark transition-colors hover:bg-bg-dark"
-                        onClick={handleAddDownloadPathFromInput}
-                      >
-                        <Plus className="mr-1 h-3.5 w-3.5" />
-                        {t('settings.addPath')}
-                      </button>
                       <button
                         type="button"
                         className="inline-flex h-9 items-center justify-center rounded border border-border-dark bg-surface-dark px-3 text-xs text-text-dark transition-colors hover:bg-bg-dark"

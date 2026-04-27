@@ -1,6 +1,6 @@
-use std::path::PathBuf;
 use std::collections::HashSet;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -205,8 +205,50 @@ fn resolve_images_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(images_dir)
 }
 
-fn prune_unreferenced_images(app: &AppHandle) -> Result<(), String> {
-    let conn = open_db(app)?;
+fn prune_unreferenced_images_in_dir(
+    images_dir: &Path,
+    referenced: &HashSet<String>,
+    min_age_ms: u64,
+) -> Result<(), String> {
+    let entries = std::fs::read_dir(&images_dir)
+        .map_err(|e| format!("Failed to read images dir: {}", e))?;
+
+    for entry_result in entries {
+        let entry = entry_result.map_err(|e| format!("Failed to iterate images dir: {}", e))?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let path_string = path.to_string_lossy().to_string();
+        if referenced.contains(&path_string) {
+            continue;
+        }
+
+        if min_age_ms > 0 {
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+            let Ok(modified_at) = metadata.modified() else {
+                continue;
+            };
+            let Ok(age) = SystemTime::now().duration_since(modified_at) else {
+                continue;
+            };
+            if age < Duration::from_millis(min_age_ms) {
+                continue;
+            }
+        }
+
+        if let Err(error) = std::fs::remove_file(&path) {
+            eprintln!("Failed to delete unreferenced image {:?}: {}", path, error);
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_referenced_image_paths(conn: &Connection) -> Result<HashSet<String>, String> {
     let mut stmt = conn
         .prepare("SELECT DISTINCT path FROM project_image_refs")
         .map_err(|e| format!("Failed to prepare image refs query: {}", e))?;
@@ -220,26 +262,14 @@ fn prune_unreferenced_images(app: &AppHandle) -> Result<(), String> {
         let path = path_result.map_err(|e| format!("Failed to decode image ref row: {}", e))?;
         referenced.insert(path);
     }
+    Ok(referenced)
+}
 
+fn prune_unreferenced_images(app: &AppHandle, min_age_ms: u64) -> Result<(), String> {
+    let conn = open_db(app)?;
+    let referenced = collect_referenced_image_paths(&conn)?;
     let images_dir = resolve_images_dir(app)?;
-    let entries = std::fs::read_dir(&images_dir)
-        .map_err(|e| format!("Failed to read images dir: {}", e))?;
-
-    for entry_result in entries {
-        let entry = entry_result.map_err(|e| format!("Failed to iterate images dir: {}", e))?;
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let path_string = path.to_string_lossy().to_string();
-        if !referenced.contains(&path_string) {
-            std::fs::remove_file(&path)
-                .map_err(|e| format!("Failed to delete unreferenced image: {}", e))?;
-        }
-    }
-
-    Ok(())
+    prune_unreferenced_images_in_dir(&images_dir, &referenced, min_age_ms)
 }
 
 fn open_db(app: &AppHandle) -> Result<Connection, String> {
@@ -406,7 +436,6 @@ pub fn upsert_project_record(app: AppHandle, record: ProjectRecord) -> Result<()
     tx.commit()
         .map_err(|e| format!("Failed to commit upsert transaction: {}", e))?;
 
-    prune_unreferenced_images(&app)?;
     Ok(())
 }
 
@@ -459,6 +488,76 @@ pub fn delete_project_record(app: AppHandle, project_id: String) -> Result<(), S
     tx.commit()
         .map_err(|e| format!("Failed to commit delete transaction: {}", e))?;
 
-    prune_unreferenced_images(&app)?;
+    if let Err(error) = prune_unreferenced_images(&app, 0) {
+        eprintln!("Failed to prune images after project deletion: {}", error);
+    }
     Ok(())
+}
+
+#[tauri::command]
+pub fn prune_project_image_cache(app: AppHandle, min_age_ms: Option<u64>) -> Result<(), String> {
+    const DEFAULT_MIN_AGE_MS: u64 = 24 * 60 * 60 * 1000;
+    prune_unreferenced_images(&app, min_age_ms.unwrap_or(DEFAULT_MIN_AGE_MS))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    use tempfile::TempDir;
+
+    fn write_test_file(directory: &Path, name: &str) -> PathBuf {
+        let path = directory.join(name);
+        let mut file = std::fs::File::create(&path).expect("create test image file");
+        file.write_all(b"image").expect("write test image file");
+        path
+    }
+
+    #[test]
+    fn prune_keeps_referenced_images() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let referenced_path = write_test_file(temp_dir.path(), "referenced.png");
+        let mut referenced = HashSet::new();
+        referenced.insert(referenced_path.to_string_lossy().to_string());
+
+        prune_unreferenced_images_in_dir(temp_dir.path(), &referenced, 0).expect("prune images");
+
+        assert!(referenced_path.exists());
+    }
+
+    #[test]
+    fn prune_keeps_unreferenced_images_younger_than_min_age() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let fresh_path = write_test_file(temp_dir.path(), "fresh.png");
+        let referenced = HashSet::new();
+
+        prune_unreferenced_images_in_dir(temp_dir.path(), &referenced, 24 * 60 * 60 * 1000)
+            .expect("prune images");
+
+        assert!(fresh_path.exists());
+    }
+
+    #[test]
+    fn prune_deletes_unreferenced_images_when_min_age_allows() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let stale_path = write_test_file(temp_dir.path(), "stale.png");
+        let referenced = HashSet::new();
+
+        prune_unreferenced_images_in_dir(temp_dir.path(), &referenced, 0).expect("prune images");
+
+        assert!(!stale_path.exists());
+    }
+
+    #[test]
+    fn prune_ignores_delete_failures_for_directories() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let nested_dir = temp_dir.path().join("nested");
+        std::fs::create_dir_all(&nested_dir).expect("create nested dir");
+        let referenced = HashSet::new();
+
+        prune_unreferenced_images_in_dir(temp_dir.path(), &referenced, 0).expect("prune images");
+
+        assert!(nested_dir.exists());
+    }
 }

@@ -72,8 +72,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Version check
+        run: npm run check:version
+
       - name: Type check
-        run: npx tsc --noEmit
+        run: npm run check:type
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Frontend tests
+        run: npm run test:run
+
+      - name: Rust check
+        run: npm run check:rust
+
+      - name: Rust tests
+        run: npm run test:rust
 
       - name: Build application
         run: npx tauri build
@@ -146,8 +161,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Version check
+        run: npm run check:version
+
       - name: Type check
-        run: npx tsc --noEmit
+        run: npm run check:type
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Frontend tests
+        run: npm run test:run
+
+      - name: Rust check
+        run: npm run check:rust
+
+      - name: Rust tests
+        run: npm run test:rust
 
       - name: Build application (Universal Binary)
         env:

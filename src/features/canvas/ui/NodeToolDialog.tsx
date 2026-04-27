@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { Suspense, lazy, useMemo, useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -20,9 +20,22 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { UiButton, UiModal } from '@/components/ui';
 import { UI_DIALOG_TRANSITION_MS } from '@/components/ui/motion';
 import { FormToolEditor } from './tool-editors/FormToolEditor';
-import { CropToolEditor } from './tool-editors/CropToolEditor';
-import { AnnotateToolEditor } from './tool-editors/AnnotateToolEditor';
-import { SplitStoryboardToolEditor } from './tool-editors/SplitStoryboardToolEditor';
+
+const CropToolEditor = lazy(() =>
+  import('./tool-editors/CropToolEditor').then((module) => ({
+    default: module.CropToolEditor,
+  }))
+);
+const AnnotateToolEditor = lazy(() =>
+  import('./tool-editors/AnnotateToolEditor').then((module) => ({
+    default: module.AnnotateToolEditor,
+  }))
+);
+const SplitStoryboardToolEditor = lazy(() =>
+  import('./tool-editors/SplitStoryboardToolEditor').then((module) => ({
+    default: module.SplitStoryboardToolEditor,
+  }))
+);
 
 export function NodeToolDialog() {
   const { t } = useTranslation();
@@ -344,7 +357,9 @@ export function NodeToolDialog() {
       }
     >
       <div className="space-y-3 max-h-[82vh] overflow-y-auto pr-1">
-        {editorContent}
+        <Suspense fallback={<div className="text-xs text-text-muted">{t('common.loading')}</div>}>
+          {editorContent}
+        </Suspense>
         {error && <div className="text-xs text-red-400">{error}</div>}
       </div>
     </UiModal>

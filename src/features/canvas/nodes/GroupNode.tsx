@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react';
 import { LayoutGrid } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
@@ -14,10 +15,11 @@ type GroupNodeProps = {
 };
 
 export const GroupNode = memo(({ id, data, selected }: GroupNodeProps) => {
+  const { t } = useTranslation();
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const resolvedTitle = useMemo(
-    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.group, data),
-    [data]
+    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.group, data, t),
+    [data, t]
   );
 
   return (

@@ -1,11 +1,10 @@
-import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
-
 import {
   loadImage,
   prepareNodeImageBinary,
   persistImageSource,
   prepareNodeImageSource,
 } from '@/commands/image';
+import { convertFileSrcPath, isTauriRuntimeSync } from '@/features/platform/platformService';
 
 export function parseAspectRatio(value: string): number {
   const [width, height] = value.split(':').map((item) => Number(item));
@@ -110,7 +109,7 @@ export function isLikelyLocalImagePath(imageUrl: string): boolean {
 export function resolveImageDisplayUrl(imageUrl: string): string {
   const lower = imageUrl.toLowerCase();
   if (lower.startsWith('file://')) {
-    if (!isTauri()) {
+    if (!isTauriRuntimeSync()) {
       return imageUrl;
     }
 
@@ -121,7 +120,7 @@ export function resolveImageDisplayUrl(imageUrl: string): string {
       if (!normalizedPath) {
         return imageUrl;
       }
-      return convertFileSrc(normalizedPath);
+      return convertFileSrcPath(normalizedPath);
     } catch {
       return imageUrl;
     }
@@ -131,11 +130,11 @@ export function resolveImageDisplayUrl(imageUrl: string): string {
     return imageUrl;
   }
 
-  if (!isTauri()) {
+  if (!isTauriRuntimeSync()) {
     return imageUrl;
   }
 
-  return convertFileSrc(imageUrl);
+  return convertFileSrcPath(imageUrl);
 }
 
 function normalizeImageSourceValue(imageUrl: string | null | undefined): string | null {
@@ -233,7 +232,7 @@ export async function persistImageLocally(source: string): Promise<string> {
     return source;
   }
 
-  if (!isTauri()) {
+  if (!isTauriRuntimeSync()) {
     return source;
   }
 
@@ -267,7 +266,7 @@ export async function imageUrlToDataUrl(imageUrl: string): Promise<string> {
   }
 
   if (isLikelyLocalImagePath(imageUrl)) {
-    if (isTauri()) {
+    if (isTauriRuntimeSync()) {
       try {
         return await loadImage(imageUrl);
       } catch (error) {
@@ -355,7 +354,7 @@ export async function prepareNodeImageFromFile(
     return prepared;
   }
 
-  if (isTauri()) {
+  if (isTauriRuntimeSync()) {
     const safeMaxDimension = Math.max(64, Math.floor(maxPreviewDimension));
     const readStarted = performance.now();
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -456,7 +455,7 @@ export async function prepareNodeImage(
   }
 
   const started = performance.now();
-  if (isTauri()) {
+  if (isTauriRuntimeSync()) {
     const safeMaxDimension = Math.max(64, Math.floor(maxPreviewDimension));
     try {
       const tauriStarted = performance.now();

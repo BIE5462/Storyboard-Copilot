@@ -1,13 +1,12 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
-import { invoke } from '@tauri-apps/api/core';
 import { setQianhaiGenerationPolicy } from './commands/ai';
 import { Canvas } from './features/canvas/Canvas';
 import { TitleBar } from './components/TitleBar';
-import { SettingsDialog } from './components/SettingsDialog';
 import { UpdateAvailableDialog, type UpdateIgnoreMode } from './components/UpdateAvailableDialog';
 import { GlobalErrorDialog } from './components/GlobalErrorDialog';
 import { ProjectManager } from './features/project/ProjectManager';
+import { useProjectImageCachePrune } from './features/project/useProjectImageCachePrune';
 import { useThemeStore } from './stores/themeStore';
 import { useProjectStore } from './stores/projectStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -24,6 +23,13 @@ import {
   subscribeOpenSettingsDialog,
   type SettingsCategory,
 } from './features/settings/settingsEvents';
+import { notifyFrontendReady } from './features/platform/platformService';
+
+const SettingsDialog = lazy(() =>
+  import('./components/SettingsDialog').then((module) => ({
+    default: module.SettingsDialog,
+  }))
+);
 
 function toRgbCssValue(hexColor: string): string {
   const hex = hexColor.replace('#', '');
@@ -60,6 +66,8 @@ function App() {
   const hydrate = useProjectStore((state) => state.hydrate);
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
   const closeProject = useProjectStore((state) => state.closeProject);
+
+  useProjectImageCachePrune(isHydrated);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -113,13 +121,13 @@ function App() {
     let cancelled = false;
     let retryTimer: ReturnType<typeof window.setTimeout> | null = null;
 
-    const notifyFrontendReady = async (attempt = 1) => {
+    const notifyFrontendReadyWithRetry = async (attempt = 1) => {
       if (cancelled) {
         return;
       }
 
       try {
-        await invoke('frontend_ready');
+        await notifyFrontendReady();
       } catch (error) {
         if (cancelled) {
           return;
@@ -131,13 +139,13 @@ function App() {
 
         const retryDelayMs = Math.min(500, 80 * attempt);
         retryTimer = window.setTimeout(() => {
-          void notifyFrontendReady(attempt + 1);
+          void notifyFrontendReadyWithRetry(attempt + 1);
         }, retryDelayMs);
       }
     };
 
     requestAnimationFrame(() => {
-      void notifyFrontendReady();
+      void notifyFrontendReadyWithRetry();
     });
 
     return () => {
@@ -257,12 +265,16 @@ function App() {
           {currentProjectId ? <Canvas /> : <ProjectManager />}
         </main>
 
-        <SettingsDialog
-          isOpen={showSettings}
-          onClose={() => setShowSettings(false)}
-          initialCategory={settingsInitialCategory}
-          onCheckUpdate={handleManualCheckUpdate}
-        />
+        {showSettings && (
+          <Suspense fallback={null}>
+            <SettingsDialog
+              isOpen={showSettings}
+              onClose={() => setShowSettings(false)}
+              initialCategory={settingsInitialCategory}
+              onCheckUpdate={handleManualCheckUpdate}
+            />
+          </Suspense>
+        )}
         <UpdateAvailableDialog
           isOpen={showUpdateDialog}
           onClose={() => setShowUpdateDialog(false)}

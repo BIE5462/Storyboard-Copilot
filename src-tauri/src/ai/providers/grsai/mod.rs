@@ -4,10 +4,11 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration, Instant};
 use tracing::info;
 use base64::{engine::general_purpose::STANDARD, Engine};
 
+use crate::ai::build_provider_http_client;
 use crate::ai::error::AIError;
 use crate::ai::{
     AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult, ProviderTaskSubmission,
@@ -18,6 +19,7 @@ const RESULT_ENDPOINT_PATH: &str = "/v1/draw/result";
 const DEFAULT_BASE_URL: &str = "https://grsai.dakka.com.cn";
 const DEFAULT_PRO_MODEL: &str = "nano-banana-pro";
 const POLL_INTERVAL_MS: u64 = 2000;
+const MAX_BLOCKING_POLL_DURATION_SECS: u64 = 10 * 60;
 
 const SUPPORTED_MODELS: [&str; 7] = [
     "nano-banana-2",
@@ -100,7 +102,7 @@ pub struct GrsaiProvider {
 impl GrsaiProvider {
     pub fn new() -> Self {
         Self {
-            client: Client::new(),
+            client: build_provider_http_client(),
             api_key: Arc::new(RwLock::new(None)),
             base_url: DEFAULT_BASE_URL.to_string(),
         }
@@ -277,7 +279,13 @@ impl GrsaiProvider {
     }
 
     async fn poll_result_until_complete(&self, task_id: &str) -> Result<String, AIError> {
+        let started = Instant::now();
         loop {
+            if started.elapsed() >= Duration::from_secs(MAX_BLOCKING_POLL_DURATION_SECS) {
+                return Err(AIError::TaskFailed(
+                    "GRSAI task polling timed out after 10 minutes".to_string(),
+                ));
+            }
             match self.poll_result_once(task_id).await? {
                 ProviderTaskPollResult::Running => sleep(Duration::from_millis(POLL_INTERVAL_MS)).await,
                 ProviderTaskPollResult::Succeeded(url) => return Ok(url),

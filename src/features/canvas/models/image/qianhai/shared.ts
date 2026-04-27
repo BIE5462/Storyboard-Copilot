@@ -20,9 +20,28 @@ export const QIANHAI_IMAGE_ASPECT_RATIOS = [
 export const QIANHAI_IMAGE_RESOLUTIONS = ['0.5K', '1K', '2K', '4K'] as const;
 export const QIANHAI_REFERENCE_IMAGE_RESOLUTIONS = ['1024x1024'] as const;
 export const QIANHAI_REFERENCE_IMAGE_ASPECT_RATIOS = ['1:1'] as const;
+export const QIANHAI_GPT_IMAGE_RESOLUTIONS = [
+  '1024x1024',
+  '1024x768',
+  '1024x576',
+  '768x1024',
+  '576x1024',
+  '2048x2048',
+  '2048x1536',
+  '2048x1152',
+  '1536x2048',
+  '1152x2048',
+  '3840x3840',
+  '3840x2160',
+  '2160x3840',
+  'auto',
+] as const;
+export const QIANHAI_GPT_IMAGE_ASPECT_RATIOS = ['1:1', '4:3', '16:9', '3:4', '9:16'] as const;
 export const QIANHAI_IMAGE_REQUEST_MODELS = [
   'gemini-3.1-flash-image-preview',
   'gemini-3-pro-image-preview',
+  'gpt-image-2',
+  'gpt-image-2-all',
 ] as const;
 
 interface CreateQianhaiImageModelOptions {

@@ -1,37 +1,9 @@
-import {
-  isExportImageNode,
-  isImageEditNode,
-  isUploadNode,
-  type CanvasEdge,
-  type CanvasNode,
-} from '../domain/canvasNodes';
+import type { CanvasEdge, CanvasNode } from '../domain/canvasNodes';
+import { selectInputImagesForNode } from '../state/canvasSelectors';
 import type { GraphImageResolver } from './ports';
-import { resolveActionImageSource } from './imageData';
 
 export class DefaultGraphImageResolver implements GraphImageResolver {
   collectInputImages(nodeId: string, nodes: CanvasNode[], edges: CanvasEdge[]): string[] {
-    const nodeById = new Map(nodes.map((node) => [node.id, node]));
-    const sourceNodeIds = edges
-      .filter((edge) => edge.target === nodeId)
-      .map((edge) => edge.source);
-
-    const images = sourceNodeIds
-      .map((sourceId) => nodeById.get(sourceId))
-      .flatMap((node) => this.extractImages(node));
-
-    return [...new Set(images)];
-  }
-
-  private extractImages(node: CanvasNode | undefined): string[] {
-    if (!node) {
-      return [];
-    }
-
-    if (isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node)) {
-      const imageSource = resolveActionImageSource(node.data.imageUrl, node.data.previewImageUrl);
-      return imageSource ? [imageSource] : [];
-    }
-
-    return [];
+    return selectInputImagesForNode(nodeId, nodes, edges);
   }
 }

@@ -56,6 +56,7 @@ import { SelectedNodeOverlay } from './ui/SelectedNodeOverlay';
 import { NodeToolDialog } from './ui/NodeToolDialog';
 import { ImageViewerModal } from './ui/ImageViewerModal';
 import { MissingApiKeyHint } from '@/features/settings/MissingApiKeyHint';
+import { useCanvasPersistenceScheduler } from './hooks/useCanvasPersistenceScheduler';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 
@@ -251,7 +252,6 @@ export function Canvas() {
     useState<PreviewConnectionVisual | null>(null);
 
   const isRestoringCanvasRef = useRef(true);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copiedSnapshotRef = useRef<ClipboardSnapshot | null>(null);
   const pasteIterationRef = useRef(0);
   const pasteImageHandledRef = useRef(false);
@@ -306,46 +306,16 @@ export function Canvas() {
   );
 
   const getCurrentProject = useProjectStore((state) => state.getCurrentProject);
-  const saveCurrentProject = useProjectStore((state) => state.saveCurrentProject);
   const saveCurrentProjectViewport = useProjectStore((state) => state.saveCurrentProjectViewport);
   const cancelPendingViewportPersist = useProjectStore(
     (state) => state.cancelPendingViewportPersist
   );
 
-  const persistCanvasSnapshot = useCallback(() => {
-    if (isRestoringCanvasRef.current) {
-      return;
-    }
-
-    const currentProject = getCurrentProject();
-    if (!currentProject) {
-      return;
-    }
-
-    const currentNodes = useCanvasStore.getState().nodes;
-    const currentEdges = useCanvasStore.getState().edges;
-    const currentHistory = useCanvasStore.getState().history;
-    saveCurrentProject(
-      currentNodes,
-      currentEdges,
-      reactFlowInstance.getViewport(),
-      currentHistory
-    );
-  }, [getCurrentProject, reactFlowInstance, saveCurrentProject]);
-
-  const scheduleCanvasPersist = useCallback(
-    (delayMs = 140) => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
-
-      saveTimerRef.current = setTimeout(() => {
-        saveTimerRef.current = null;
-        persistCanvasSnapshot();
-      }, delayMs);
-    },
-    [persistCanvasSnapshot]
-  );
+  const {
+    clearScheduledCanvasPersist,
+    persistCanvasSnapshot,
+    scheduleCanvasPersist,
+  } = useCanvasPersistenceScheduler({ isRestoringCanvasRef, reactFlowInstance });
 
   useEffect(() => {
     const unsubscribeOpen = canvasEventBus.subscribe('tool-dialog/open', (payload) => {
@@ -379,14 +349,12 @@ export function Canvas() {
 
     return () => {
       clearTimeout(restoreTimer);
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
+      clearScheduledCanvasPersist();
       closeImageViewer();
       persistCanvasSnapshot();
     };
   }, [
+    clearScheduledCanvasPersist,
     closeImageViewer,
     getCurrentProject,
     persistCanvasSnapshot,

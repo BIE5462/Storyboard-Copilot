@@ -94,8 +94,8 @@ export class CanvasToolProcessor implements ToolProcessor {
 
     let cropWidth = image.naturalWidth;
     let cropHeight = image.naturalHeight;
-    let offsetX = 0;
-    let offsetY = 0;
+    let offsetX: number;
+    let offsetY: number;
 
     if (hasManualCropArea) {
       offsetX = Math.min(image.naturalWidth - 1, Math.max(0, Math.floor(cropX)));

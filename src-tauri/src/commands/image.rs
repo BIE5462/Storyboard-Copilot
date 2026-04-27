@@ -10,16 +10,22 @@ use md5;
 use png::{BitDepth, ColorType, Decoder, Encoder};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_dialog::DialogExt;
 use tracing::info;
 
 const STORYBOARD_METADATA_PNG_TEXT_KEY: &str = "StoryboardCopilotMetadata";
 const FAST_PREVIEW_BYPASS_MAX_BYTES: usize = 2_000_000;
 const FAST_PREVIEW_BYPASS_MAX_DIMENSION: u32 = 2048;
+const MAX_LOAD_IMAGE_BYTES: u64 = 50 * 1024 * 1024;
+const ALLOWED_IMAGE_EXTENSIONS: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
+
+static AUTHORIZED_OUTPUT_DIRS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -241,6 +247,27 @@ pub struct PrepareNodeImageResult {
     pub image_path: String,
     pub preview_image_path: String,
     pub aspect_ratio: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryboardImageExportItem {
+    pub source: String,
+    pub file_stem: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveStoryboardImagesPayload {
+    pub root_folder_name: String,
+    pub items: Vec<StoryboardImageExportItem>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveStoryboardImagesResult {
+    pub output_dir: String,
+    pub saved_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1055,6 +1082,108 @@ fn resolve_images_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(images_dir)
 }
 
+fn resolve_app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {}", e))
+}
+
+fn authorized_output_dirs() -> &'static Mutex<HashSet<PathBuf>> {
+    AUTHORIZED_OUTPUT_DIRS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn normalize_path_for_authorization(path: &Path) -> Result<PathBuf, String> {
+    if path.exists() {
+        path.canonicalize()
+            .map_err(|e| format!("Failed to canonicalize path: {}", e))
+    } else if let Some(parent) = path.parent() {
+        let parent = parent
+            .canonicalize()
+            .map_err(|e| format!("Failed to canonicalize parent path: {}", e))?;
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| "Path is missing a file name".to_string())?;
+        Ok(parent.join(file_name))
+    } else {
+        Err("Path is missing a parent directory".to_string())
+    }
+}
+
+fn authorize_output_dir(path: &Path) -> Result<PathBuf, String> {
+    let canonical = normalize_path_for_authorization(path)?;
+    let mut authorized = authorized_output_dirs()
+        .lock()
+        .map_err(|_| "Failed to lock authorized output directories".to_string())?;
+    authorized.insert(canonical.clone());
+    Ok(canonical)
+}
+
+fn forget_output_dir(path: &Path) -> Result<(), String> {
+    let canonical = normalize_path_for_authorization(path)?;
+    let mut authorized = authorized_output_dirs()
+        .lock()
+        .map_err(|_| "Failed to lock authorized output directories".to_string())?;
+    authorized.remove(&canonical);
+    Ok(())
+}
+
+fn is_path_inside(path: &Path, ancestor: &Path) -> bool {
+    path == ancestor || path.starts_with(ancestor)
+}
+
+fn is_authorized_output_path(app: &AppHandle, path: &Path) -> Result<bool, String> {
+    let canonical_path = normalize_path_for_authorization(path)?;
+    let app_data_dir = normalize_path_for_authorization(&resolve_app_data_dir(app)?)?;
+    if is_path_inside(&canonical_path, &app_data_dir) {
+        return Ok(true);
+    }
+
+    let authorized = authorized_output_dirs()
+        .lock()
+        .map_err(|_| "Failed to lock authorized output directories".to_string())?;
+    Ok(authorized
+        .iter()
+        .any(|dir| is_path_inside(&canonical_path, dir)))
+}
+
+fn ensure_authorized_output_path(app: &AppHandle, path: &Path) -> Result<(), String> {
+    if is_authorized_output_path(app, path)? {
+        Ok(())
+    } else {
+        Err("Target path is not authorized. Choose a folder or file from the system dialog first.".to_string())
+    }
+}
+
+fn is_allowed_image_extension(extension: &str) -> bool {
+    let normalized = normalize_extension(extension);
+    ALLOWED_IMAGE_EXTENSIONS
+        .iter()
+        .any(|allowed| *allowed == normalized)
+}
+
+fn validate_image_file_for_load(app: &AppHandle, path: &Path) -> Result<PathBuf, String> {
+    let canonical = normalize_path_for_authorization(path)?;
+    if !canonical.is_file() {
+        return Err("Image path must be a file".to_string());
+    }
+    let extension = canonical
+        .extension()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Image file is missing an extension".to_string())?;
+    if !is_allowed_image_extension(extension) {
+        return Err("Unsupported image file extension".to_string());
+    }
+    let metadata = std::fs::metadata(&canonical)
+        .map_err(|e| format!("Failed to read image file metadata: {}", e))?;
+    if metadata.len() > MAX_LOAD_IMAGE_BYTES {
+        return Err("Image file is larger than 50MB".to_string());
+    }
+
+    let _ = app;
+
+    Ok(canonical)
+}
+
 fn persist_image_bytes(app: &AppHandle, bytes: &[u8], extension: &str) -> Result<String, String> {
     let images_dir = resolve_images_dir(app)?;
     let digest = md5::compute(bytes);
@@ -1422,6 +1551,37 @@ fn ensure_output_path_with_extension(path: &Path, extension: &str) -> PathBuf {
     with_extension
 }
 
+fn write_image_to_directory(
+    dir_path: &Path,
+    bytes: Vec<u8>,
+    extension: &str,
+    suggested_file_name: Option<&str>,
+) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(dir_path)
+        .map_err(|e| format!("Failed to create target dir: {}", e))?;
+
+    let now_millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("Failed to resolve current time: {}", e))?
+        .as_millis();
+    let stem = sanitize_file_stem(suggested_file_name.unwrap_or(""));
+    let default_stem = if stem == "storyboard-image" {
+        format!("storyboard-{}", now_millis)
+    } else {
+        stem
+    };
+
+    let output_path = ensure_unique_path(dir_path.join(format!(
+        "{}.{}",
+        default_stem,
+        normalize_extension(extension)
+    )));
+    std::fs::write(&output_path, bytes)
+        .map_err(|e| format!("Failed to save image to target directory: {}", e))?;
+
+    Ok(output_path)
+}
+
 #[tauri::command]
 pub async fn save_image_source_to_downloads(
     source: String,
@@ -1442,30 +1602,22 @@ pub async fn save_image_source_to_downloads(
     std::fs::create_dir_all(downloads_dir)
         .map_err(|e| format!("Failed to create downloads dir: {}", e))?;
 
-    let now_millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| format!("Failed to resolve current time: {}", e))?
-        .as_millis();
-    let stem = sanitize_file_stem(suggested_file_name.as_deref().unwrap_or(""));
-    let default_stem = if stem == "storyboard-image" {
-        format!("storyboard-{}", now_millis)
-    } else {
-        stem
-    };
-
-    let output_path = ensure_unique_path(downloads_dir.join(format!(
-        "{}.{}",
-        default_stem,
-        normalize_extension(&extension)
-    )));
-    std::fs::write(&output_path, bytes)
-        .map_err(|e| format!("Failed to save image into downloads: {}", e))?;
+    let output_path = write_image_to_directory(
+        downloads_dir,
+        bytes,
+        &extension,
+        suggested_file_name.as_deref(),
+    )?;
 
     Ok(output_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
-pub async fn save_image_source_to_path(source: String, target_path: String) -> Result<String, String> {
+pub async fn save_image_source_to_path(
+    app: AppHandle,
+    source: String,
+    target_path: String,
+) -> Result<String, String> {
     let trimmed_source = source.trim();
     if trimmed_source.is_empty() {
         return Err("Image source is empty".to_string());
@@ -1479,6 +1631,7 @@ pub async fn save_image_source_to_path(source: String, target_path: String) -> R
     let (bytes, extension) = resolve_source_bytes(trimmed_source).await?;
     let raw_path = PathBuf::from(trimmed_target);
     let output_path = ensure_output_path_with_extension(&raw_path, &extension);
+    ensure_authorized_output_path(&app, &output_path)?;
 
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)
@@ -1493,6 +1646,7 @@ pub async fn save_image_source_to_path(source: String, target_path: String) -> R
 
 #[tauri::command]
 pub async fn save_image_source_to_directory(
+    app: AppHandle,
     source: String,
     target_dir: String,
     suggested_file_name: Option<String>,
@@ -1509,29 +1663,126 @@ pub async fn save_image_source_to_directory(
 
     let (bytes, extension) = resolve_source_bytes(trimmed_source).await?;
     let dir_path = PathBuf::from(trimmed_dir);
-    std::fs::create_dir_all(&dir_path)
-        .map_err(|e| format!("Failed to create target dir: {}", e))?;
-
-    let now_millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| format!("Failed to resolve current time: {}", e))?
-        .as_millis();
-    let stem = sanitize_file_stem(suggested_file_name.as_deref().unwrap_or(""));
-    let default_stem = if stem == "storyboard-image" {
-        format!("storyboard-{}", now_millis)
-    } else {
-        stem
-    };
-
-    let output_path = ensure_unique_path(dir_path.join(format!(
-        "{}.{}",
-        default_stem,
-        normalize_extension(&extension)
-    )));
-    std::fs::write(&output_path, bytes)
-        .map_err(|e| format!("Failed to save image to target directory: {}", e))?;
+    ensure_authorized_output_path(&app, &dir_path)?;
+    let output_path = write_image_to_directory(
+        &dir_path,
+        bytes,
+        &extension,
+        suggested_file_name.as_deref(),
+    )?;
 
     Ok(output_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn save_image_source_with_dialog(
+    app: AppHandle,
+    source: String,
+    suggested_file_name: Option<String>,
+) -> Result<Option<String>, String> {
+    let trimmed_source = source.trim();
+    if trimmed_source.is_empty() {
+        return Err("Image source is empty".to_string());
+    }
+
+    let (bytes, extension) = resolve_source_bytes(trimmed_source).await?;
+    let default_file_name = format!(
+        "{}.{}",
+        sanitize_file_stem(suggested_file_name.as_deref().unwrap_or("storyboard-image")),
+        normalize_extension(&extension)
+    );
+    let selected = app
+        .dialog()
+        .file()
+        .set_file_name(&default_file_name)
+        .blocking_save_file();
+    let Some(file_path) = selected else {
+        return Ok(None);
+    };
+    let raw_path = file_path
+        .into_path()
+        .map_err(|e| format!("Selected save path is not a local file path: {}", e))?;
+    let output_path = ensure_output_path_with_extension(&raw_path, &extension);
+    if let Some(parent) = output_path.parent() {
+        authorize_output_dir(parent)?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create output dir: {}", e))?;
+    }
+    std::fs::write(&output_path, bytes)
+        .map_err(|e| format!("Failed to save image to selected path: {}", e))?;
+
+    Ok(Some(output_path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub fn pick_download_preset_directory(app: AppHandle) -> Result<Option<String>, String> {
+    let selected = app.dialog().file().blocking_pick_folder();
+    let Some(folder_path) = selected else {
+        return Ok(None);
+    };
+    let raw_path = folder_path
+        .into_path()
+        .map_err(|e| format!("Selected folder is not a local file path: {}", e))?;
+    let canonical = authorize_output_dir(&raw_path)?;
+    Ok(Some(canonical.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub fn remove_download_preset_directory(path: String) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    forget_output_dir(&PathBuf::from(trimmed))
+}
+
+#[tauri::command]
+pub async fn save_image_source_to_preset_directory(
+    app: AppHandle,
+    source: String,
+    preset_dir: String,
+    file_stem: Option<String>,
+) -> Result<String, String> {
+    save_image_source_to_directory(app, source, preset_dir, file_stem).await
+}
+
+#[tauri::command]
+pub async fn save_storyboard_images_to_directory(
+    app: AppHandle,
+    payload: SaveStoryboardImagesPayload,
+) -> Result<Option<SaveStoryboardImagesResult>, String> {
+    let root_folder_name = sanitize_file_stem(&payload.root_folder_name);
+    if payload.items.is_empty() {
+        return Err("No storyboard images to save".to_string());
+    }
+
+    let selected = app.dialog().file().blocking_pick_folder();
+    let Some(folder_path) = selected else {
+        return Ok(None);
+    };
+    let raw_root = folder_path
+        .into_path()
+        .map_err(|e| format!("Selected folder is not a local file path: {}", e))?;
+    let root_dir = authorize_output_dir(&raw_root)?;
+    let output_dir = root_dir.join(root_folder_name);
+    authorize_output_dir(&output_dir)?;
+
+    let mut saved_paths = Vec::with_capacity(payload.items.len());
+    for item in payload.items {
+        let trimmed_source = item.source.trim();
+        if trimmed_source.is_empty() {
+            continue;
+        }
+        let (bytes, extension) = resolve_source_bytes(trimmed_source).await?;
+        let output_path =
+            write_image_to_directory(&output_dir, bytes, &extension, Some(item.file_stem.as_str()))?;
+        saved_paths.push(output_path.to_string_lossy().to_string());
+    }
+
+    Ok(Some(SaveStoryboardImagesResult {
+        output_dir: output_dir.to_string_lossy().to_string(),
+        saved_paths,
+    }))
 }
 
 #[tauri::command]
@@ -1607,24 +1858,35 @@ pub async fn copy_image_source_to_clipboard(source: String) -> Result<(), String
 }
 
 #[tauri::command]
-pub async fn load_image(file_path: String) -> Result<String, String> {
+pub async fn load_image(app: AppHandle, file_path: String) -> Result<String, String> {
     info!("Loading image from: {}", file_path);
+    let trimmed = file_path.trim();
+    if trimmed.is_empty() {
+        return Err("Image path is empty".to_string());
+    }
 
+    let path = if trimmed.starts_with("file://") {
+        PathBuf::from(decode_file_url_path(trimmed))
+    } else {
+        PathBuf::from(trimmed)
+    };
+    let safe_path = validate_image_file_for_load(&app, &path)?;
     let image_data =
-        std::fs::read(&file_path).map_err(|e| format!("Failed to read file: {}", e))?;
+        std::fs::read(&safe_path).map_err(|e| format!("Failed to read file: {}", e))?;
 
     let base64_data = STANDARD.encode(&image_data);
 
-    let mime = if file_path.ends_with(".png") {
-        "image/png"
-    } else if file_path.ends_with(".jpg") || file_path.ends_with(".jpeg") {
-        "image/jpeg"
-    } else if file_path.ends_with(".gif") {
-        "image/gif"
-    } else if file_path.ends_with(".webp") {
-        "image/webp"
-    } else {
-        "image/png"
+    let extension = safe_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(normalize_extension)
+        .unwrap_or_else(|| "png".to_string());
+    let mime = match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => "image/png",
     };
 
     Ok(format!("data:{};base64,{}", mime, base64_data))

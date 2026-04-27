@@ -1,11 +1,24 @@
 pub mod error;
 pub mod providers;
 
+use reqwest::Client;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::info;
 
 use error::AIError;
+
+const PROVIDER_CONNECT_TIMEOUT_SECS: u64 = 15;
+const PROVIDER_REQUEST_TIMEOUT_SECS: u64 = 180;
+
+pub fn build_provider_http_client() -> Client {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(PROVIDER_CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(PROVIDER_REQUEST_TIMEOUT_SECS))
+        .build()
+        .unwrap_or_else(|_| Client::new())
+}
 
 #[derive(Debug, Clone)]
 pub struct GenerateRequest {

@@ -45,6 +45,26 @@
     "annotate": "Annotate",
     "split": "Split"
   },
+  "toolEditor": {
+    "crop": {
+      "aspectRatio": "Target ratio",
+      "custom": "Custom",
+      "customRatioRequired": "Enter a ratio, for example 3:2 or 1.5",
+      "customRatioInvalid": "Invalid ratio format",
+      "customRatioPlaceholder": "Enter a ratio, e.g. 3:2 or 1.5",
+      "ratio": {
+        "free": "Free",
+        "original": "Original"
+      }
+    },
+    "annotate": {
+      "rect": "Rectangle",
+      "ellipse": "Ellipse",
+      "arrow": "Arrow",
+      "pen": "Brush",
+      "text": "Text"
+    }
+  },
   "toolDialog": {
     "suffix": " Tool",
     "noProcessableImage": "No processable image for current node",
@@ -85,6 +105,20 @@
     "thinkingHigh": "High"
   },
   "node": {
+    "defaults": {
+      "upload": "Upload Image",
+      "imageEdit": "AI Image",
+      "textAnnotation": "Text Annotation",
+      "group": "Group",
+      "storyboardSplit": "Split Result",
+      "storyboardGen": "Storyboard Generation",
+      "exportImage": {
+        "generic": "Result Image",
+        "storyboardGenOutput": "Storyboard Output",
+        "storyboardSplitExport": "Split Export",
+        "storyboardFrameEdit": "Storyboard Frame"
+      }
+    },
     "menu": {
       "uploadImage": "Upload Image",
       "aiImageGeneration": "AI Image",
@@ -131,7 +165,43 @@
       "frames": "Frames",
       "rows": "Rows",
       "cols": "Columns",
-      "frameIndex": "Frame {{index}}"
+      "frameIndex": "Frame {{index}}",
+      "frameLabel": "Image {{index}}",
+      "emptyFrame": "Empty frame",
+      "editFrameTitle": "Edit this frame",
+      "replaceFromInputTitle": "Replace from input image",
+      "frameNotePlaceholder": "Frame {{index}} description",
+      "noEditableImage": "This frame has no editable image",
+      "createEditNodeFailed": "Failed to create edit node",
+      "noExportableImage": "No exportable image",
+      "exportCanvasInitFailed": "Failed to initialize export canvas",
+      "exportFailed": "Export failed",
+      "noPackableImage": "This storyboard has no exportable images",
+      "packDownloadFailed": "Pack download failed",
+      "openFolderFailed": "Failed to open folder",
+      "noInputImages": "No input images",
+      "exportSettings": "Export settings",
+      "frameCount": "{{count}} frames",
+      "packDownloading": "Packing...",
+      "packDownload": "Pack download",
+      "exporting": "Exporting...",
+      "mergeStoryboard": "Merge storyboard",
+      "showFrameIndex": "Show frame index",
+      "showFrameNote": "Show frame description",
+      "imageFit": "Image fit",
+      "imageFitCover": "Cover cell",
+      "imageFitContain": "Show full image",
+      "frameIndexPrefix": "Index prefix",
+      "notePlacement": "Description position",
+      "notePlacementOverlay": "Overlay on image",
+      "notePlacementBottom": "Text below image",
+      "cellGap": "Gap",
+      "fontSizePercent": "Font size (%)",
+      "background": "Background",
+      "textColor": "Text",
+      "exportDone": "Export complete",
+      "exportDoneDesc": "Images were exported to:",
+      "openFolder": "Open folder"
     },
     "storyboardGen": {
       "rowsShort": "R",
@@ -257,7 +327,7 @@
     "accentColorDesc": "Used by buttons, selected borders, and interaction highlights.",
     "resetAccentColor": "Reset",
     "downloadPresetPaths": "Download Preset Paths",
-    "downloadPresetPathsDesc": "Used by node toolbar download menu for quick-save directories (up to 8).",
+    "downloadPresetPathsDesc": "Used by node toolbar download menu for quick-save directories (up to 8). Add folders through the system picker.",
     "storyboardGenKeepStyleConsistent": "Keep storyboard style aligned with references",
     "storyboardGenKeepStyleConsistentDesc": "When enabled, storyboard generation prompt appends \"图片风格与参考图保持一致\".",
     "storyboardGenDisableTextInImage": "Disallow descriptive text in storyboard image",
@@ -266,8 +336,6 @@
     "ignoreAtTagWhenCopyingAndGeneratingDesc": "When enabled, copied text and embedded storyboard metadata remove tags like \"@图1\"; generation requests only remove \"@\" and keep \"图1\".",
     "useUploadFilenameAsNodeTitle": "Use uploaded filename as node title",
     "useUploadFilenameAsNodeTitleDesc": "When enabled, newly uploaded images use the file name as the node title by default (still editable via double-click).",
-    "downloadPathPlaceholder": "Input folder path, e.g. /Users/name/Pictures/Storyboard or D:\\\\Images\\\\Storyboard",
-    "addPath": "Add Path",
     "chooseFolder": "Choose Folder",
     "noDownloadPresetPaths": "No preset path yet",
     "providerApiKeyGuidePrefix": "First",

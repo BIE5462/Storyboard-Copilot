@@ -14,6 +14,7 @@ import {
 } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type Konva from 'konva';
+import { useTranslation } from 'react-i18next';
 
 import type { ToolOptions } from '@/features/canvas/tools';
 import {
@@ -45,7 +46,12 @@ type DraftState = {
   points?: number[];
 };
 
-type ToolButton = { type: AnnotationToolType; label: string; icon: typeof Square };
+type ToolButton = {
+  type: AnnotationToolType;
+  label: string;
+  labelKey: string;
+  icon: typeof Square;
+};
 
 interface TextEditorState {
   annotationId: string | null;
@@ -55,11 +61,11 @@ interface TextEditorState {
 }
 
 const TOOL_BUTTONS: ToolButton[] = [
-  { type: 'rect', label: '矩形', icon: Square },
-  { type: 'ellipse', label: '圆形', icon: Circle },
-  { type: 'arrow', label: '箭头', icon: ArrowRight },
-  { type: 'pen', label: '画笔', icon: Brush },
-  { type: 'text', label: '文本', icon: Type },
+  { type: 'rect', label: '矩形', labelKey: 'toolEditor.annotate.rect', icon: Square },
+  { type: 'ellipse', label: '圆形', labelKey: 'toolEditor.annotate.ellipse', icon: Circle },
+  { type: 'arrow', label: '箭头', labelKey: 'toolEditor.annotate.arrow', icon: ArrowRight },
+  { type: 'pen', label: '画笔', labelKey: 'toolEditor.annotate.pen', icon: Brush },
+  { type: 'text', label: '文本', labelKey: 'toolEditor.annotate.text', icon: Type },
 ];
 
 function toNumber(value: unknown, fallback: number): number {
@@ -196,6 +202,7 @@ function pruneUndefinedToolOptionsPatch(patch: Partial<ToolOptions>): Partial<To
 }
 
 export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }: VisualToolEditorProps) {
+  const { t } = useTranslation();
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [tool, setTool] = useState<AnnotationToolType>('rect');
   const [annotations, setAnnotations] = useState<AnnotationItem[]>(() =>
@@ -723,18 +730,17 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
       return;
     }
 
-    let patch: Partial<ToolOptions> = {};
-    if (selectedAnnotation.type === 'text') {
-      patch = {
+    const patch: Partial<ToolOptions> =
+      selectedAnnotation.type === 'text'
+        ? {
         color: selectedAnnotation.color,
         fontSizePercent: clamp(
           fontSizeToPercent(selectedAnnotation.fontSize, textBaseSize),
           MIN_TEXT_SIZE_PERCENT,
           MAX_TEXT_SIZE_PERCENT
         ),
-      };
-    } else {
-      patch = {
+      }
+        : {
         color: selectedAnnotation.stroke,
         lineWidthPercent: clamp(
           lineWidthToPercent(selectedAnnotation.lineWidth, textBaseSize),
@@ -742,7 +748,6 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
           MAX_LINE_WIDTH_PERCENT
         ),
       };
-    }
 
     const safePatch = pruneUndefinedToolOptionsPatch(patch);
     const hasChange = Object.entries(safePatch).some(
@@ -989,7 +994,7 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
               }`}
             >
               <Icon className="h-3.5 w-3.5" />
-              {button.label}
+              {button.labelKey ? t(button.labelKey) : button.label}
             </button>
           );
         })}

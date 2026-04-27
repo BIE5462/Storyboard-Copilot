@@ -81,6 +81,21 @@ export interface MergeStoryboardImagesResult {
   textOverlayApplied: boolean;
 }
 
+export interface StoryboardImageExportItem {
+  source: string;
+  fileStem: string;
+}
+
+export interface SaveStoryboardImagesPayload {
+  rootFolderName: string;
+  items: StoryboardImageExportItem[];
+}
+
+export interface SaveStoryboardImagesResult {
+  outputDir: string;
+  savedPaths: string[];
+}
+
 export async function mergeStoryboardImages(
   payload: MergeStoryboardImagesPayload
 ): Promise<MergeStoryboardImagesResult> {
@@ -168,6 +183,24 @@ export async function saveImageSourceToPath(
   });
 }
 
+export async function saveImageSourceWithDialog(
+  source: string,
+  suggestedFileName?: string
+): Promise<string | null> {
+  return await invoke('save_image_source_with_dialog', {
+    source,
+    suggestedFileName,
+  });
+}
+
+export async function pickDownloadPresetDirectory(): Promise<string | null> {
+  return await invoke('pick_download_preset_directory');
+}
+
+export async function removeDownloadPresetDirectory(path: string): Promise<void> {
+  await invoke('remove_download_preset_directory', { path });
+}
+
 export async function saveImageSourceToDirectory(
   source: string,
   targetDir: string,
@@ -178,6 +211,24 @@ export async function saveImageSourceToDirectory(
     targetDir,
     suggestedFileName,
   });
+}
+
+export async function saveImageSourceToPresetDirectory(
+  source: string,
+  presetDir: string,
+  fileStem?: string
+): Promise<string> {
+  return await invoke('save_image_source_to_preset_directory', {
+    source,
+    presetDir,
+    fileStem,
+  });
+}
+
+export async function saveStoryboardImagesToDirectory(
+  payload: SaveStoryboardImagesPayload
+): Promise<SaveStoryboardImagesResult | null> {
+  return await invoke('save_storyboard_images_to_directory', { payload });
 }
 
 export async function saveImageSourceToAppDebugDir(

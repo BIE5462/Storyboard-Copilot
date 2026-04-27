@@ -26,10 +26,8 @@ import {
 import { EXPORT_RESULT_DISPLAY_NAME, resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import {
-  canvasAiGateway,
-  graphImageResolver,
-} from '@/features/canvas/application/canvasServices';
+import { canvasAiGateway } from '@/features/canvas/application/canvasServices';
+import { useCanvasInputImages } from '@/features/canvas/state/canvasSelectors';
 import { resolveErrorContent, showErrorDialog } from '@/features/canvas/application/errorDialog';
 import {
   deriveAspectRatioFromSize,
@@ -111,10 +109,6 @@ interface PickerAnchor {
   top: number;
 }
 
-const AUTO_ASPECT_RATIO_OPTION: AspectRatioChoice = {
-  value: AUTO_REQUEST_ASPECT_RATIO,
-  label: '自动',
-};
 const PICKER_FALLBACK_ANCHOR: PickerAnchor = { left: 8, top: 8 };
 
 const STORYBOARD_NODE_HORIZONTAL_PADDING_PX = 24;
@@ -536,8 +530,6 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const { zoom } = useViewport();
   const updateNodeInternals = useUpdateNodeInternals();
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
-  const nodes = useCanvasStore((state) => state.nodes);
-  const edges = useCanvasStore((state) => state.edges);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const addNode = useCanvasStore((state) => state.addNode);
   const addEdge = useCanvasStore((state) => state.addEdge);
@@ -589,14 +581,11 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   );
   const frameDescriptionDraftsRef = useRef(frameDescriptionDrafts);
   const resolvedTitle = useMemo(
-    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.storyboardGen, nodeData),
-    [nodeData]
+    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.storyboardGen, nodeData, t),
+    [nodeData, t]
   );
 
-  const incomingImages = useMemo(
-    () => graphImageResolver.collectInputImages(id, nodes, edges),
-    [id, nodes, edges]
-  );
+  const incomingImages = useCanvasInputImages(id);
   const incomingImageItems = useMemo(
     () =>
       incomingImages.map((imageUrl, index) => ({
@@ -664,14 +653,20 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   );
 
   const aspectRatioOptions = useMemo<AspectRatioChoice[]>(
-    () => [AUTO_ASPECT_RATIO_OPTION, ...selectedModel.aspectRatios],
-    [selectedModel.aspectRatios]
+    () => [
+      {
+        value: AUTO_REQUEST_ASPECT_RATIO,
+        label: t('modelParams.autoAspectRatio'),
+      },
+      ...selectedModel.aspectRatios,
+    ],
+    [selectedModel.aspectRatios, t]
   );
 
   const selectedAspectRatio = useMemo((): AspectRatioChoice => {
     const nodeAspectRatio = nodeData.requestAspectRatio;
     const found = nodeAspectRatio ? aspectRatioOptions.find((item) => item.value === nodeAspectRatio) : undefined;
-    return found ?? AUTO_ASPECT_RATIO_OPTION;
+    return found ?? aspectRatioOptions[0];
   }, [aspectRatioOptions, nodeData.requestAspectRatio]);
   const effectiveSelectedAspectRatio = useMemo<AspectRatioChoice>(
     () =>
@@ -715,13 +710,11 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const baseFrameLayout = useMemo(() => {
     const aspectRatio = Math.max(0.1, parseAspectRatio(frameAspectRatioValue));
     let cellWidth = STORYBOARD_GRID_BASE_CELL_HEIGHT_PX * aspectRatio;
-    let gridWidth = nodeData.gridCols * cellWidth + Math.max(0, nodeData.gridCols - 1) * STORYBOARD_GRID_GAP_PX;
+    const gridWidth = nodeData.gridCols * cellWidth + Math.max(0, nodeData.gridCols - 1) * STORYBOARD_GRID_GAP_PX;
 
     if (gridWidth > STORYBOARD_GRID_MAX_WIDTH_PX) {
       const scale = STORYBOARD_GRID_MAX_WIDTH_PX / gridWidth;
       cellWidth *= scale;
-      gridWidth =
-        nodeData.gridCols * cellWidth + Math.max(0, nodeData.gridCols - 1) * STORYBOARD_GRID_GAP_PX;
     }
 
     const roundedCellWidth = Math.max(FRAME_CELL_MIN_WIDTH_PX, Math.round(cellWidth));

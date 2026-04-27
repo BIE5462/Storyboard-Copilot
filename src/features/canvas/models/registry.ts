@@ -49,6 +49,8 @@ const imageModelAliasMap = new Map<string, string>([
   ['gemini-3.1-flash-edit', 'ppio/gemini-3.1-flash'],
   ['gemini-3-pro-image-preview', 'qianhai/gemini-3-pro-image-preview'],
   ['gemini-3.1-flash-image-preview', 'qianhai/gemini-3.1-flash-image-preview'],
+  ['gpt-image-2', 'qianhai/gpt-image-2'],
+  ['gpt-image-2-all', 'qianhai/gpt-image-2-all'],
   ['qwen-image-2.0-pro', 'dashscope/qwen-image-2.0-pro'],
   ['qwen-image-2.0', 'dashscope/qwen-image-2.0'],
   ['grok-image', 'qianhai/grok-image'],

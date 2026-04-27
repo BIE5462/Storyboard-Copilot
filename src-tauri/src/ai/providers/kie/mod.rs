@@ -6,10 +6,11 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration, Instant};
 use tracing::info;
 use uuid::Uuid;
 
+use crate::ai::build_provider_http_client;
 use crate::ai::error::AIError;
 use crate::ai::{
     AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult, ProviderTaskSubmission,
@@ -22,6 +23,7 @@ const RECORD_INFO_PATH: &str = "/api/v1/jobs/recordInfo";
 const FILE_UPLOAD_PATH: &str = "/api/file-stream-upload";
 const UPLOAD_PATH: &str = "images/storyboard-copilot";
 const POLL_INTERVAL_MS: u64 = 2500;
+const MAX_BLOCKING_POLL_DURATION_SECS: u64 = 10 * 60;
 
 #[derive(Debug, Deserialize)]
 struct KieCreateTaskResponse {
@@ -67,7 +69,7 @@ pub struct KieProvider {
 impl KieProvider {
     pub fn new() -> Self {
         Self {
-            client: Client::new(),
+            client: build_provider_http_client(),
             api_key: Arc::new(RwLock::new(None)),
         }
     }
@@ -416,7 +418,13 @@ impl KieProvider {
     }
 
     async fn poll_task_until_complete(&self, api_key: &str, task_id: &str) -> Result<String, AIError> {
+        let started = Instant::now();
         loop {
+            if started.elapsed() >= Duration::from_secs(MAX_BLOCKING_POLL_DURATION_SECS) {
+                return Err(AIError::TaskFailed(
+                    "KIE task polling timed out after 10 minutes".to_string(),
+                ));
+            }
             match self.poll_task_once(api_key, task_id).await? {
                 ProviderTaskPollResult::Running => sleep(Duration::from_millis(POLL_INTERVAL_MS)).await,
                 ProviderTaskPollResult::Succeeded(url) => return Ok(url),

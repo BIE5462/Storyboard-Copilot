@@ -23,10 +23,7 @@ import {
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
-import {
-  canvasAiGateway,
-  graphImageResolver,
-} from '@/features/canvas/application/canvasServices';
+import { canvasAiGateway } from '@/features/canvas/application/canvasServices';
 import { resolveErrorContent, showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { deriveAspectRatioFromSize } from '@/features/canvas/application/generationSize';
 import {
@@ -80,6 +77,7 @@ import { NodePriceBadge } from '@/features/canvas/ui/NodePriceBadge';
 import { UiButton } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useCanvasInputImages } from '@/features/canvas/state/canvasSelectors';
 
 type ImageEditNodeProps = NodeProps & {
   id: string;
@@ -251,8 +249,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const [pickerActiveIndex, setPickerActiveIndex] = useState(0);
   const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>(PICKER_FALLBACK_ANCHOR);
 
-  const nodes = useCanvasStore((state) => state.nodes);
-  const edges = useCanvasStore((state) => state.edges);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const addNode = useCanvasStore((state) => state.addNode);
@@ -267,10 +263,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const preferDiscountedPrice = useSettingsStore((state) => state.preferDiscountedPrice);
   const grsaiCreditTierId = useSettingsStore((state) => state.grsaiCreditTierId);
 
-  const incomingImages = useMemo(
-    () => graphImageResolver.collectInputImages(id, nodes, edges),
-    [id, nodes, edges]
-  );
+  const incomingImages = useCanvasInputImages(id);
 
   const incomingImageItems = useMemo(
     () =>
@@ -430,8 +423,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   );
 
   const resolvedTitle = useMemo(
-    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.imageEdit, data),
-    [data]
+    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.imageEdit, data, t),
+    [data, t]
   );
 
   const resolvedWidth = Math.max(IMAGE_EDIT_NODE_MIN_WIDTH, Math.round(width ?? IMAGE_EDIT_NODE_DEFAULT_WIDTH));

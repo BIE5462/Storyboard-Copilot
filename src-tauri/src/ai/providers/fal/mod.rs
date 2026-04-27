@@ -3,15 +3,17 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration, Instant};
 use tracing::info;
 
+use crate::ai::build_provider_http_client;
 use crate::ai::error::AIError;
 use crate::ai::{
     AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult, ProviderTaskSubmission,
 };
 
 const FAL_QUEUE_BASE_URL: &str = "https://queue.fal.run";
+const MAX_BLOCKING_POLL_DURATION_SECS: u64 = 10 * 60;
 const FAL_NANO_BANANA_2_T2I_MODEL_PATH: &str = "fal-ai/nano-banana-2";
 const FAL_NANO_BANANA_2_I2I_MODEL_PATH: &str = "fal-ai/nano-banana-2/edit";
 const FAL_NANO_BANANA_PRO_T2I_MODEL_PATH: &str = "fal-ai/nano-banana-pro";
@@ -38,7 +40,7 @@ pub struct FalProvider {
 impl FalProvider {
     pub fn new() -> Self {
         Self {
-            client: Client::new(),
+            client: build_provider_http_client(),
             api_key: Arc::new(RwLock::new(None)),
         }
     }
@@ -371,7 +373,13 @@ impl AIProvider for FalProvider {
             ProviderTaskSubmission::Succeeded(result) => return Ok(result),
             ProviderTaskSubmission::Queued(handle) => handle,
         };
+        let started = Instant::now();
         loop {
+            if started.elapsed() >= Duration::from_secs(MAX_BLOCKING_POLL_DURATION_SECS) {
+                return Err(AIError::TaskFailed(
+                    "FAL task polling timed out after 10 minutes".to_string(),
+                ));
+            }
             match self.poll_task(handle.clone()).await? {
                 ProviderTaskPollResult::Running => {
                     sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;

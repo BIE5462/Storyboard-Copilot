@@ -1,6 +1,5 @@
-import { getVersion } from '@tauri-apps/api/app';
-import { isTauri } from '@tauri-apps/api/core';
 import { checkLatestReleaseTag } from '../../../commands/update';
+import { getAppVersion, isTauriRuntime } from '@/features/platform/platformService';
 
 const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/BIE5462/Storyboard-Copilot/releases/latest';
 const VERSION_SUPPRESSION_STORAGE_KEY = 'storyboard:update-check:version-suppressions';
@@ -144,7 +143,7 @@ function compareVersions(left: string, right: string): number {
 
 export async function checkForUpdate(): Promise<UpdateCheckResult> {
   try {
-    const currentVersion = normalizeVersion(await getVersion());
+    const currentVersion = normalizeVersion(await getAppVersion());
     if (!currentVersion) {
       return { hasUpdate: false };
     }
@@ -154,7 +153,7 @@ export async function checkForUpdate(): Promise<UpdateCheckResult> {
 
     let latestTag = '';
 
-    if (isTauri()) {
+    if (await isTauriRuntime()) {
       try {
         latestTag = normalizeVersion((await checkLatestReleaseTag()) ?? '');
       } catch {

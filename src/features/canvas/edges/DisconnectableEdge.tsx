@@ -10,6 +10,7 @@ import {
 import { CANVAS_NODE_TYPES } from '@/features/canvas/domain/canvasNodes';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useCanvasNodeById } from '@/features/canvas/state/canvasSelectors';
 import { buildOrthogonalRoute } from './edgeRouting';
 
 export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgeProps) {
@@ -29,6 +30,8 @@ export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgePr
   } = props;
   const deleteEdge = useCanvasStore((state) => state.deleteEdge);
   const nodes = useCanvasStore((state) => state.nodes);
+  const sourceNode = useCanvasNodeById(source);
+  const targetNode = useCanvasNodeById(target);
   const canvasEdgeRoutingMode = useSettingsStore((state) => state.canvasEdgeRoutingMode);
 
   const { edgePath, labelX, labelY } = useMemo(() => {
@@ -79,9 +82,6 @@ export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgePr
   ]);
 
   const isProcessingEdge = useMemo(() => {
-    const sourceNode = nodes.find((node) => node.id === source);
-    const targetNode = nodes.find((node) => node.id === target);
-
     if (!sourceNode || !targetNode || targetNode.type !== CANVAS_NODE_TYPES.exportImage) {
       return false;
     }
@@ -97,7 +97,7 @@ export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgePr
       (targetNode.data as { isGenerating?: boolean } | undefined)?.isGenerating === true;
 
     return isTargetGenerating;
-  }, [nodes, source, target]);
+  }, [sourceNode, targetNode]);
 
   const processingStroke = 'rgb(var(--accent-rgb) / 0.94)';
   const processingDashStroke = 'rgb(var(--accent-rgb) / 1)';

@@ -7,6 +7,7 @@ import {
   useRef,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Handle,
   Position,
@@ -15,31 +16,22 @@ import {
   type NodeProps,
 } from '@xyflow/react';
 import { Download, FolderOpen, ImagePlus, SlidersHorizontal, SquareArrowOutUpRight } from 'lucide-react';
-import { open } from '@tauri-apps/plugin-dialog';
-import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
-import { join } from '@tauri-apps/api/path';
 
 import {
   embedStoryboardImageMetadata,
   mergeStoryboardImages,
-  saveImageSourceToDirectory,
+  saveStoryboardImagesToDirectory,
   type MergeStoryboardImagesResult,
 } from '@/commands/image';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import type {
-  CanvasNode,
   StoryboardExportOptions,
   StoryboardFrameItem,
   StoryboardSplitNodeData,
 } from '@/features/canvas/domain/canvasNodes';
-import {
-  CANVAS_NODE_TYPES,
-  isExportImageNode,
-  isImageEditNode,
-  isUploadNode,
-} from '@/features/canvas/domain/canvasNodes';
+import { CANVAS_NODE_TYPES } from '@/features/canvas/domain/canvasNodes';
 import { EXPORT_RESULT_DISPLAY_NAME, resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import {
   canvasToDataUrl,
@@ -60,7 +52,11 @@ import {
 } from '@/features/canvas/ui/nodeControlStyles';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
-import { useSettingsStore } from '@/stores/settingsStore';
+import { useCanvasInputImageRefs } from '@/features/canvas/state/canvasSelectors';
+import {
+  openPathInSystem,
+  revealPathInDirectory,
+} from '@/features/platform/platformService';
 
 type StoryboardNodeProps = NodeProps & {
   id: string;
@@ -194,7 +190,8 @@ async function applyStoryboardTextOverlay(
   options: StoryboardExportOptions,
   rows: number,
   cols: number,
-  layout: MergeStoryboardImagesResult
+  layout: MergeStoryboardImagesResult,
+  errorMessage: string
 ): Promise<string> {
   if (!options.showFrameIndex && !options.showFrameNote) {
     return imageSource;
@@ -207,7 +204,7 @@ async function applyStoryboardTextOverlay(
 
   const context = canvas.getContext('2d');
   if (!context) {
-    throw new Error('导出画布初始化失败');
+    throw new Error(errorMessage);
   }
 
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -281,6 +278,7 @@ interface FrameCardProps {
   onSortHover: (frameId: string) => void;
   onTogglePicker: (frameId: string, x: number, y: number) => void;
   onEditFrame: (frame: StoryboardFrameItem) => void;
+  translate: (key: string, options?: Record<string, unknown>) => string;
 }
 
 interface IncomingImageItem {
@@ -310,6 +308,7 @@ const FrameCard = memo(
     onSortHover,
     onTogglePicker,
     onEditFrame,
+    translate,
   }: FrameCardProps) => {
     const updateStoryboardFrame = useCanvasStore((state) => state.updateStoryboardFrame);
     const { zoom } = useViewport();
@@ -368,7 +367,7 @@ const FrameCard = memo(
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-[11px] text-text-muted">
-              空分镜
+              {translate('node.storyboardNode.emptyFrame')}
             </div>
           )}
 
@@ -380,7 +379,7 @@ const FrameCard = memo(
               event.stopPropagation();
               onEditFrame(frame);
             }}
-            title="单独编辑此格"
+            title={translate('node.storyboardNode.editFrameTitle')}
           >
             <SquareArrowOutUpRight className="h-3 w-3" />
           </button>
@@ -393,7 +392,7 @@ const FrameCard = memo(
               event.stopPropagation();
               onTogglePicker(frame.id, event.clientX, event.clientY);
             }}
-            title="从输入图片替换"
+            title={translate('node.storyboardNode.replaceFromInputTitle')}
           >
             <ImagePlus className="h-3 w-3" />
           </button>
@@ -409,7 +408,9 @@ const FrameCard = memo(
           }}
           onMouseDown={(event) => event.stopPropagation()}
           onWheelCapture={(event) => event.stopPropagation()}
-          placeholder={`分镜 ${String(index + 1).padStart(2, '0')} 描述`}
+          placeholder={translate('node.storyboardNode.frameNotePlaceholder', {
+            index: String(index + 1).padStart(2, '0'),
+          })}
           className="ui-scrollbar nodrag nowheel h-10 w-full resize-none overflow-y-auto border-0 border-t border-[rgba(255,255,255,0.12)] bg-bg-dark/90 px-2 py-1 text-[10px] text-text-dark outline-none focus:border-accent"
         />
       </div>
@@ -420,22 +421,19 @@ const FrameCard = memo(
 FrameCard.displayName = 'FrameCard';
 
 export const StoryboardNode = memo(({ id, data, selected, width, height }: StoryboardNodeProps) => {
+  const { t } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
   const rootRef = useRef<HTMLDivElement>(null);
   const pickerMenuRef = useRef<HTMLDivElement>(null);
   const exportSettingsTriggerRef = useRef<HTMLDivElement>(null);
   const exportSettingsPanelRef = useRef<HTMLDivElement>(null);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
-  const nodes = useCanvasStore((state) => state.nodes);
-  const edges = useCanvasStore((state) => state.edges);
   const reorderStoryboardFrame = useCanvasStore((state) => state.reorderStoryboardFrame);
   const addDerivedExportNode = useCanvasStore((state) => state.addDerivedExportNode);
   const addEdge = useCanvasStore((state) => state.addEdge);
   const updateStoryboardFrame = useCanvasStore((state) => state.updateStoryboardFrame);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const currentProjectName = useProjectStore((state) => state.currentProject?.name);
-  const downloadPresetPaths = useSettingsStore((state) => state.downloadPresetPaths);
-
   const [draggedFrameId, setDraggedFrameId] = useState<string | null>(null);
   const [dropTargetFrameId, setDropTargetFrameId] = useState<string | null>(null);
   const [pickerState, setPickerState] = useState<{ frameId: string; x: number; y: number } | null>(null);
@@ -481,8 +479,8 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
   }, [id, resolvedNodeHeight, resolvedNodeWidth, updateNodeInternals]);
 
   const resolvedTitle = useMemo(
-    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.storyboardSplit, data),
-    [data]
+    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.storyboardSplit, data, t),
+    [data, t]
   );
 
   const exportOptions = useMemo(
@@ -490,38 +488,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
     [data.exportOptions]
   );
 
-  const incomingImageRefs = useMemo(() => {
-    const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
-    const sourceNodeIds = edges
-      .filter((edge) => edge.target === id)
-      .map((edge) => edge.source);
-
-    const dedupedByImageUrl = new Map<string, { imageUrl: string; previewImageUrl: string | null }>();
-    for (const sourceNodeId of sourceNodeIds) {
-      const sourceNode = nodeById.get(sourceNodeId) as CanvasNode | undefined;
-      if (!sourceNode) {
-        continue;
-      }
-      if (!isUploadNode(sourceNode) && !isImageEditNode(sourceNode) && !isExportImageNode(sourceNode)) {
-        continue;
-      }
-      const imageUrl = resolveActionImageSource(
-        sourceNode.data.imageUrl,
-        sourceNode.data.previewImageUrl
-      );
-      if (!imageUrl) {
-        continue;
-      }
-      if (!dedupedByImageUrl.has(imageUrl)) {
-        dedupedByImageUrl.set(imageUrl, {
-          imageUrl,
-          previewImageUrl: sourceNode.data.previewImageUrl ?? null,
-        });
-      }
-    }
-
-    return Array.from(dedupedByImageUrl.values());
-  }, [edges, id, nodes]);
+  const incomingImageRefs = useCanvasInputImageRefs(id);
 
   const incomingImageItems = useMemo<IncomingImageItem[]>(
     () =>
@@ -537,10 +504,10 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
           previewImageUrl: item.previewImageUrl,
           displayUrl,
           viewerSourceUrl,
-          label: `图${index + 1}`,
+          label: t('node.storyboardNode.frameLabel', { index: index + 1 }),
         };
       }),
-    [incomingImageRefs]
+    [incomingImageRefs, t]
   );
   const frameViewerImageList = useMemo(
     () =>
@@ -684,12 +651,12 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
       try {
         const sourceImage = resolveActionImageSource(frame.imageUrl, frame.previewImageUrl);
         if (!sourceImage) {
-          setExportError('该分镜没有可编辑图片');
+          setExportError(t('node.storyboardNode.noEditableImage'));
           return;
         }
         const frameIndex = orderedFrames.findIndex((item) => item.id === frame.id);
         const frameTitle = frameIndex >= 0
-          ? `分镜 ${frameIndex + 1}`
+          ? t('node.storyboardNode.frameIndex', { index: frameIndex + 1 })
           : EXPORT_RESULT_DISPLAY_NAME.storyboardFrameEdit;
 
         const prepared = await prepareNodeImage(sourceImage);
@@ -708,10 +675,10 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
           addEdge(id, createdNodeId);
         }
       } catch (error) {
-        setExportError(error instanceof Error ? error.message : '创建编辑节点失败');
+        setExportError(error instanceof Error ? error.message : t('node.storyboardNode.createEditNodeFailed'));
       }
     },
-    [addDerivedExportNode, addEdge, id, orderedFrames]
+    [addDerivedExportNode, addEdge, id, orderedFrames, t]
   );
 
   const handleExport = useCallback(async () => {
@@ -738,7 +705,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         (frame) => resolveActionImageSource(frame.imageUrl, frame.previewImageUrl) ?? ''
       );
       if (frameSources.every((source) => !source)) {
-        throw new Error('没有可导出的图片');
+        throw new Error(t('node.storyboardNode.noExportableImage'));
       }
       console.info(`${EXPORT_TRACE_PREFIX} frame-sources-ready`, {
         traceId,
@@ -819,7 +786,8 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
           options,
           gridRows,
           gridCols,
-          mergeResult
+          mergeResult,
+          t('node.storyboardNode.exportCanvasInitFailed')
         );
         console.info(`${EXPORT_TRACE_PREFIX} overlay-done`, {
           traceId,
@@ -884,7 +852,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         elapsedMs: Math.round(performance.now() - traceStart),
         error,
       });
-      setExportError(error instanceof Error ? error.message : '导出失败');
+      setExportError(error instanceof Error ? error.message : t('node.storyboardNode.exportFailed'));
     } finally {
       setIsExporting(false);
     }
@@ -897,25 +865,8 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
     id,
     isExporting,
     orderedFrames,
+    t,
   ]);
-
-  const resolvePackRootDir = useCallback(async (): Promise<string | null> => {
-    const presetPath = downloadPresetPaths.find((path) => path.trim().length > 0)?.trim() ?? '';
-    if (presetPath) {
-      return presetPath;
-    }
-
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: '选择分镜导出文件夹',
-    });
-    if (!selected || Array.isArray(selected)) {
-      return null;
-    }
-
-    return selected;
-  }, [downloadPresetPaths]);
 
   const handlePackSingleImages = useCallback(async () => {
     if (isExporting || isPackingSingleImages) {
@@ -935,36 +886,35 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         .filter((item) => item.source.length > 0);
 
       if (frameEntries.length === 0) {
-        throw new Error('该分镜没有可导出的图片');
-      }
-
-      const rootDir = await resolvePackRootDir();
-      if (!rootDir) {
-        return;
+        throw new Error(t('node.storyboardNode.noPackableImage'));
       }
 
       const normalizedProjectName = sanitizePathSegment(currentProjectName ?? '', '未命名项目');
-      const outputDir = await join(rootDir, normalizedProjectName);
       const fileProjectName = sanitizeExportLabel(normalizedProjectName, 40) || '项目';
-      let firstSavedFilePath = '';
 
-      for (const item of frameEntries) {
-        const frameNo = String(item.index + 1).padStart(2, '0');
-        const noteLabel = sanitizeExportLabel(item.note, 60);
-        const fileStem = noteLabel
-          ? `${fileProjectName}_${frameNo}_${noteLabel}`
-          : `${fileProjectName}_${frameNo}`;
-        const savedPath = await saveImageSourceToDirectory(item.source, outputDir, fileStem);
-        if (!firstSavedFilePath) {
-          firstSavedFilePath = savedPath;
-        }
+      const result = await saveStoryboardImagesToDirectory({
+        rootFolderName: normalizedProjectName,
+        items: frameEntries.map((item) => {
+          const frameNo = String(item.index + 1).padStart(2, '0');
+          const noteLabel = sanitizeExportLabel(item.note, 60);
+          const fileStem = noteLabel
+            ? `${fileProjectName}_${frameNo}_${noteLabel}`
+            : `${fileProjectName}_${frameNo}`;
+          return {
+            source: item.source,
+            fileStem,
+          };
+        }),
+      });
+      if (!result) {
+        return;
       }
 
-      setPackOutputDir(outputDir);
-      setPackRevealFilePath(firstSavedFilePath);
+      setPackOutputDir(result.outputDir);
+      setPackRevealFilePath(result.savedPaths[0] ?? '');
       setIsPackDoneDialogOpen(true);
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : '打包下载失败');
+      setExportError(error instanceof Error ? error.message : t('node.storyboardNode.packDownloadFailed'));
     } finally {
       setIsPackingSingleImages(false);
     }
@@ -973,7 +923,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
     isExporting,
     isPackingSingleImages,
     orderedFrames,
-    resolvePackRootDir,
+    t,
   ]);
 
   const handleOpenPackFolder = useCallback(async () => {
@@ -982,23 +932,23 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
     }
     try {
       if (packRevealFilePath) {
-        await revealItemInDir(packRevealFilePath);
+        await revealPathInDirectory(packRevealFilePath);
         return;
       }
       if (packOutputDir) {
-        await openPath(packOutputDir);
+        await openPathInSystem(packOutputDir);
       }
     } catch {
       try {
         if (packOutputDir) {
-          await openPath(packOutputDir);
+          await openPathInSystem(packOutputDir);
           return;
         }
       } catch (error) {
-        setExportError(error instanceof Error ? error.message : '打开文件夹失败');
+        setExportError(error instanceof Error ? error.message : t('node.storyboardNode.openFolderFailed'));
       }
     }
-  }, [packOutputDir, packRevealFilePath]);
+  }, [packOutputDir, packRevealFilePath, t]);
 
   const isAnyExporting = isExporting || isPackingSingleImages;
 
@@ -1075,6 +1025,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
               onEditFrame={(targetFrame) => {
                 void handleEditFrame(targetFrame);
               }}
+              translate={t}
             />
           ))}
         </div>
@@ -1119,7 +1070,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
               </div>
             ) : (
               <div className="px-2 py-2 text-sm text-text-muted">
-                暂无输入图片
+                {t('node.storyboardNode.noInputImages')}
               </div>
             )}
           </div>,
@@ -1144,12 +1095,12 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
               }}
             >
               <SlidersHorizontal className={`${NODE_CONTROL_ICON_CLASS} shrink-0`} />
-              <span>导出设置</span>
+              <span>{t('node.storyboardNode.exportSettings')}</span>
             </UiChipButton>
           </div>
 
           <div className="truncate text-[11px] text-text-muted/80">
-            {gridRows} x {gridCols} | {totalFrames} 格
+            {gridRows} x {gridCols} | {t('node.storyboardNode.frameCount', { count: totalFrames })}
           </div>
         </div>
 
@@ -1165,7 +1116,9 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
             disabled={isAnyExporting}
           >
             <FolderOpen className={NODE_CONTROL_ICON_CLASS} />
-            {isPackingSingleImages ? '打包中...' : '打包下载'}
+            {isPackingSingleImages
+              ? t('node.storyboardNode.packDownloading')
+              : t('node.storyboardNode.packDownload')}
           </UiButton>
           <UiButton
             size="sm"
@@ -1178,7 +1131,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
             disabled={isAnyExporting}
           >
             <Download className={NODE_CONTROL_ICON_CLASS} />
-            {isExporting ? '导出中...' : '合并分镜'}
+            {isExporting ? t('node.storyboardNode.exporting') : t('node.storyboardNode.mergeStoryboard')}
           </UiButton>
         </div>
       </div>
@@ -1204,7 +1157,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                   checked={exportOptions.showFrameIndex}
                   onCheckedChange={(checked) => patchExportOptions({ showFrameIndex: checked })}
                 />
-                显示分镜序号
+                {t('node.storyboardNode.showFrameIndex')}
               </label>
 
               <label className="flex items-center gap-2">
@@ -1212,12 +1165,12 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                   checked={exportOptions.showFrameNote}
                   onCheckedChange={(checked) => patchExportOptions({ showFrameNote: checked })}
                 />
-                显示分镜描述
+                {t('node.storyboardNode.showFrameNote')}
               </label>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <div className="mb-1">图片填充</div>
+                  <div className="mb-1">{t('node.storyboardNode.imageFit')}</div>
                   <UiSelect
                     value={exportOptions.imageFit}
                     onChange={(event) =>
@@ -1226,12 +1179,12 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                       })
                     }
                   >
-                    <option value="cover">填充满格子</option>
-                    <option value="contain">完整显示</option>
+                    <option value="cover">{t('node.storyboardNode.imageFitCover')}</option>
+                    <option value="contain">{t('node.storyboardNode.imageFitContain')}</option>
                   </UiSelect>
                 </div>
                 <div>
-                  <div className="mb-1">序号前缀</div>
+                  <div className="mb-1">{t('node.storyboardNode.frameIndexPrefix')}</div>
                   <UiInput
                     value={exportOptions.frameIndexPrefix}
                     maxLength={4}
@@ -1240,7 +1193,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                   />
                 </div>
                 <div>
-                  <div className="mb-1">描述位置</div>
+                  <div className="mb-1">{t('node.storyboardNode.notePlacement')}</div>
                   <UiSelect
                     value={exportOptions.notePlacement}
                     onChange={(event) =>
@@ -1249,15 +1202,15 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                       })
                     }
                   >
-                    <option value="overlay">图上遮罩</option>
-                    <option value="bottom">图下文字</option>
+                    <option value="overlay">{t('node.storyboardNode.notePlacementOverlay')}</option>
+                    <option value="bottom">{t('node.storyboardNode.notePlacementBottom')}</option>
                   </UiSelect>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <div className="mb-1">间距</div>
+                  <div className="mb-1">{t('node.storyboardNode.cellGap')}</div>
                   <UiInput
                     type="number"
                     min={0}
@@ -1270,7 +1223,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                   />
                 </div>
                 <div>
-                  <div className="mb-1">字号(%)</div>
+                  <div className="mb-1">{t('node.storyboardNode.fontSizePercent')}</div>
                   <UiInput
                     type="number"
                     min={1}
@@ -1286,7 +1239,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
 
               <div className="grid grid-cols-2 gap-2">
                 <label className="flex items-center gap-2">
-                  <span>背景</span>
+                  <span>{t('node.storyboardNode.background')}</span>
                   <input
                     type="color"
                     value={exportOptions.backgroundColor}
@@ -1295,7 +1248,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                   />
                 </label>
                 <label className="flex items-center gap-2">
-                  <span>文字</span>
+                  <span>{t('node.storyboardNode.textColor')}</span>
                   <input
                     type="color"
                     value={exportOptions.textColor}
@@ -1336,8 +1289,8 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
           <div className="fixed inset-0 z-[220] flex items-center justify-center">
             <div className="absolute inset-0 bg-black/55" />
             <UiPanel className="relative w-[440px] p-4">
-              <div className="text-sm font-medium text-text-dark">导出完成</div>
-              <div className="mt-2 text-xs text-text-muted">图片已导出到以下路径：</div>
+              <div className="text-sm font-medium text-text-dark">{t('node.storyboardNode.exportDone')}</div>
+              <div className="mt-2 text-xs text-text-muted">{t('node.storyboardNode.exportDoneDesc')}</div>
               <div className="mt-1 break-all rounded border border-[rgba(255,255,255,0.12)] bg-bg-dark/70 px-2 py-1.5 text-xs text-text-dark">
                 {packOutputDir}
               </div>
@@ -1349,14 +1302,14 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                     void handleOpenPackFolder();
                   }}
                 >
-                  打开文件夹
+                  {t('node.storyboardNode.openFolder')}
                 </UiButton>
                 <UiButton
                   size="sm"
                   variant="primary"
                   onClick={() => setIsPackDoneDialogOpen(false)}
                 >
-                  确定
+                  {t('common.confirm')}
                 </UiButton>
               </div>
             </UiPanel>

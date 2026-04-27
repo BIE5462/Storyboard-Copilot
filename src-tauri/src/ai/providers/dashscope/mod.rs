@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
 
+use crate::ai::build_provider_http_client;
 use crate::ai::error::AIError;
 use crate::ai::{AIProvider, GenerateRequest};
 
@@ -40,7 +41,7 @@ pub struct DashScopeProvider {
 impl DashScopeProvider {
     pub fn new() -> Self {
         Self {
-            client: Client::new(),
+            client: build_provider_http_client(),
             api_key: Arc::new(RwLock::new(None)),
         }
     }

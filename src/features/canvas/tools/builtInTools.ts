@@ -15,6 +15,7 @@ function supportsImageSourceNode(node: CanvasNode): boolean {
 export const cropToolPlugin: CanvasToolPlugin = {
   type: NODE_TOOL_TYPES.crop,
   label: '裁剪',
+  labelKey: 'tool.crop',
   icon: 'crop',
   editor: 'crop',
   supportsNode: (node) => supportsImageSourceNode(node) && Boolean(node.data.imageUrl),
@@ -26,9 +27,10 @@ export const cropToolPlugin: CanvasToolPlugin = {
     {
       key: 'aspectRatio',
       label: '目标比例',
+      labelKey: 'toolEditor.crop.aspectRatio',
       type: 'select',
       options: [
-        { label: '自由', value: 'free' },
+        { label: '自由', labelKey: 'toolEditor.crop.ratio.free', value: 'free' },
         { label: '1:1', value: '1:1' },
         { label: '16:9', value: '16:9' },
         { label: '9:16', value: '9:16' },
@@ -44,6 +46,7 @@ export const cropToolPlugin: CanvasToolPlugin = {
 export const annotateToolPlugin: CanvasToolPlugin = {
   type: NODE_TOOL_TYPES.annotate,
   label: '标注',
+  labelKey: 'tool.annotate',
   icon: 'annotate',
   editor: 'annotate',
   supportsNode: (node) => supportsImageSourceNode(node) && Boolean(node.data.imageUrl),
@@ -61,6 +64,7 @@ export const annotateToolPlugin: CanvasToolPlugin = {
 export const splitStoryboardToolPlugin: CanvasToolPlugin = {
   type: NODE_TOOL_TYPES.splitStoryboard,
   label: '切割',
+  labelKey: 'tool.split',
   icon: 'split',
   editor: 'split',
   supportsNode: (node) => supportsImageSourceNode(node) && Boolean(node.data.imageUrl),

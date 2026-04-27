@@ -5,6 +5,7 @@ import ReactCrop, {
   type Crop,
   type PixelCrop,
 } from 'react-image-crop';
+import { useTranslation } from 'react-i18next';
 import 'react-image-crop/dist/ReactCrop.css';
 
 import { resolveImageDisplayUrl } from '@/features/canvas/application/imageData';
@@ -111,6 +112,7 @@ function buildDefaultCrop(width: number, height: number, aspect: number | undefi
 }
 
 export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChange }: VisualToolEditorProps) {
+  const { t } = useTranslation();
   const imageRef = useRef<HTMLImageElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const previousAspectKeyRef = useRef<string | null>(null);
@@ -171,7 +173,7 @@ export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChang
     const field = plugin.fields.find((item) => item.type === 'select' && item.key === 'aspectRatio');
     if (!field) {
       return [
-        { label: '自由', value: 'free' },
+        { label: '自由', labelKey: 'toolEditor.crop.ratio.free', value: 'free' },
         { label: '1:1', value: '1:1' },
         { label: '16:9', value: '16:9' },
         { label: '9:16', value: '9:16' },
@@ -183,7 +185,7 @@ export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChang
         { label: '5:4', value: '5:4' },
         { label: '2:1', value: '2:1' },
         { label: '21:9', value: '21:9' },
-        { label: '原图', value: 'original' },
+        { label: '原图', labelKey: 'toolEditor.crop.ratio.original', value: 'original' },
       ];
     }
 
@@ -215,13 +217,13 @@ export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChang
       return null;
     }
     if (!customRatioInput.trim()) {
-      return '请输入比例，例如 3:2 或 1.5';
+      return t('toolEditor.crop.customRatioRequired');
     }
     if (!parseCustomRatio(customRatioInput)) {
-      return '比例格式无效';
+      return t('toolEditor.crop.customRatioInvalid');
     }
     return null;
-  }, [aspectMode, customRatioInput]);
+  }, [aspectMode, customRatioInput, t]);
 
   useEffect(() => {
     setCustomRatioInput(typeof options.customAspectRatio === 'string' ? options.customAspectRatio : '');
@@ -361,7 +363,7 @@ export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChang
                 })
               }
             >
-              {item.label}
+              {item.labelKey ? t(item.labelKey) : item.label}
             </button>
           );
         })}
@@ -380,7 +382,7 @@ export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChang
             })
           }
         >
-          自定义
+          {t('toolEditor.crop.custom')}
         </button>
       </div>
 
@@ -398,7 +400,7 @@ export function CropToolEditor({ plugin, sourceImageUrl, options, onOptionsChang
                 customAspectRatio: next,
               });
             }}
-            placeholder="输入比例，如 3:2 或 1.5"
+            placeholder={t('toolEditor.crop.customRatioPlaceholder')}
             className="h-9 w-[220px] rounded-lg border border-[rgba(255,255,255,0.15)] bg-bg-dark/80 px-3 text-sm text-text-dark outline-none"
           />
           {customRatioError && <span className="text-xs text-red-400">{customRatioError}</span>}

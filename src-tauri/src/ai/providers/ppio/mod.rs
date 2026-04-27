@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
 
+use crate::ai::build_provider_http_client;
 use crate::ai::error::AIError;
 use crate::ai::AIProvider;
 
@@ -28,7 +29,7 @@ struct ImageResponse {
 impl PPIOProvider {
     pub fn new() -> Self {
         Self {
-            client: Client::new(),
+            client: build_provider_http_client(),
             api_key: Arc::new(RwLock::new(None)),
             base_url: "https://api.ppio.com".to_string(),
             model_registry: PPIOModelRegistry::new(),

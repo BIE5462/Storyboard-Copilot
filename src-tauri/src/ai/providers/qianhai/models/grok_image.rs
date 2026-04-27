@@ -3,7 +3,9 @@ use serde_json::json;
 use crate::ai::error::AIError;
 use crate::ai::GenerateRequest;
 
-use super::super::adapter::{PreparedRequest, QianhaiModelAdapter};
+use super::super::adapter::{
+    PreparedRequest, PreparedRequestBody, PreparedResponseKind, QianhaiModelAdapter,
+};
 use super::shared::{
     collect_reference_image_urls, resolve_runtime_model_name, truncate_for_log,
 };
@@ -79,7 +81,8 @@ impl QianhaiModelAdapter for GrokImageAdapter {
 
         Ok(PreparedRequest {
             endpoint,
-            body,
+            body: PreparedRequestBody::Json(body),
+            response_kind: PreparedResponseKind::GrokImageSource,
             summary,
         })
     }

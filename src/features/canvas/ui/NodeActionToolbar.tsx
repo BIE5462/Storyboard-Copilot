@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NodeToolbar as ReactFlowNodeToolbar } from '@xyflow/react';
 import { Copy, Crop, Download, FolderOpen, PenLine, RefreshCw, Scissors, Trash2, Unlink2 } from 'lucide-react';
-import { save } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -21,8 +20,8 @@ import type { ToolIconKey } from '@/features/canvas/tools';
 import { UiChipButton, UiPanel } from '@/components/ui';
 import {
   copyImageSourceToClipboard,
-  saveImageSourceToDirectory,
-  saveImageSourceToPath,
+  saveImageSourceToPresetDirectory,
+  saveImageSourceWithDialog,
 } from '@/commands/image';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -275,13 +274,10 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
     }
 
     try {
-      const selectedPath = await save({
-        defaultPath: `node-${node.id}.png`,
-      });
-      if (!selectedPath || Array.isArray(selectedPath)) {
+      const savedPath = await saveImageSourceWithDialog(imageSource, `node-${node.id}.png`);
+      if (!savedPath) {
         return;
       }
-      await saveImageSourceToPath(imageSource, selectedPath);
       closeDownloadMenu();
     } catch (error) {
       console.error('Failed to save image with save-as', error);
@@ -294,7 +290,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
         return;
       }
       try {
-        await saveImageSourceToDirectory(imageSource, targetDir, `node-${node.id}`);
+        await saveImageSourceToPresetDirectory(imageSource, targetDir, `node-${node.id}`);
         closeDownloadMenu();
       } catch (error) {
         console.error('Failed to save image to preset dir', error);

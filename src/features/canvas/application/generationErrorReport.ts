@@ -1,3 +1,6 @@
+import { getAppVersion } from '@/features/platform/platformService';
+import { getRuntimeSystemInfo } from '@/commands/system';
+
 export interface GenerationDebugContext {
   sourceType: 'imageEdit' | 'storyboardGen' | 'unknown';
   providerId?: string;
@@ -79,19 +82,17 @@ export async function getRuntimeDiagnostics(): Promise<
       const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
       const osInfo = parseOsInfo(userAgent);
 
-      let appVersion = 'unknown';
+      let appVersion: string;
       let resolvedOsName = osInfo.osName;
       let resolvedOsVersion = osInfo.osVersion;
       let resolvedOsBuild = 'unknown';
       try {
-        const { getVersion } = await import('@tauri-apps/api/app');
-        appVersion = await getVersion();
+        appVersion = await getAppVersion();
       } catch {
         appVersion = 'unknown';
       }
 
       try {
-        const { getRuntimeSystemInfo } = await import('@/commands/system');
         const systemInfo = await getRuntimeSystemInfo();
         if (systemInfo) {
           if (systemInfo.osName) {

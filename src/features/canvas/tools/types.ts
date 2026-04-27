@@ -7,11 +7,13 @@ export type ToolOptions = Record<string, ToolOptionPrimitive>;
 interface ToolFieldBase {
   key: string;
   label: string;
+  labelKey?: string;
 }
 
 export interface ToolTextField extends ToolFieldBase {
   type: 'text';
   placeholder?: string;
+  placeholderKey?: string;
 }
 
 export interface ToolNumberField extends ToolFieldBase {
@@ -25,6 +27,7 @@ export interface ToolSelectField extends ToolFieldBase {
   type: 'select';
   options: Array<{
     label: string;
+    labelKey?: string;
     value: string;
   }>;
 }
@@ -53,6 +56,7 @@ export type ToolEditorKind = 'form' | 'crop' | 'annotate' | 'split';
 export interface CanvasToolPlugin {
   type: NodeToolType;
   label: string;
+  labelKey?: string;
   icon: ToolIconKey;
   editor: ToolEditorKind;
   supportsNode: (node: CanvasNode) => boolean;

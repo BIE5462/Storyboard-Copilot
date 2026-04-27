@@ -50,3 +50,7 @@ export async function renameProjectRecord(
 export async function deleteProjectRecord(projectId: string): Promise<void> {
   await invoke('delete_project_record', { projectId });
 }
+
+export async function pruneProjectImageCache(minAgeMs?: number): Promise<void> {
+  await invoke('prune_project_image_cache', { minAgeMs });
+}

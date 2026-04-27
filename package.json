@@ -5,10 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "check:type": "tsc --noEmit",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview",
+    "lint": "eslint .",
+    "format:check": "prettier --check .prettierrc src/test/setup.ts src/features/project/useProjectImageCachePrune.ts src/features/canvas/hooks/useCanvasPersistenceScheduler.ts src/features/canvas/nodes/TextAnnotationMarkdownPreview.tsx",
+    "test": "vitest",
+    "test:run": "vitest run",
     "tauri": "tauri",
     "sync:version": "node scripts/sync-version.mjs",
+    "check:version": "node scripts/check-version.mjs",
+    "check:rust": "cargo check --manifest-path src-tauri/Cargo.toml",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "check": "npm run check:version && npm run check:type && npm run check:rust && npm run test:rust",
     "release": "node scripts/release.mjs",
     "test:qianhai": "node scripts/test-qianhai-gemini-image-preview.mjs",
     "test:dashscope": "node scripts/test-dashscope-qwen-image.mjs"
@@ -36,15 +46,25 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.4.21",
+    "eslint": "^10.2.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "jsdom": "^29.1.0",
     "postcss": "^8.5.3",
+    "prettier": "^3.8.3",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.7.3",
-    "vite": "^6.1.0"
+    "typescript-eslint": "^8.59.0",
+    "vite": "^6.1.0",
+    "vitest": "^4.1.5"
   }
 }
